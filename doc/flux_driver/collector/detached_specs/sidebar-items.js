@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["LookupRes"],"fn":["item_def_kind","path_to_symbol"],"struct":["DetachedSpecsCollector","ScopeResolver","TraitImplKey","TraitImplResolver"],"type":["Result"]};

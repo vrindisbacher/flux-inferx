@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["DuplicateParam","IllegalBinder","InvalidUnrefinedParam","UnresolvedSort","UnresolvedVar"]};

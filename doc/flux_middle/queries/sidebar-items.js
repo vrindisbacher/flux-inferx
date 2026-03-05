@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ErrCtxt","QueryErr"],"fn":["run_with_cache","try_query"],"macro":["empty_query"],"struct":["Providers","Queries","QueryErrAt"],"trait":["DispatchKey"],"type":["Cache","QueryResult"]};

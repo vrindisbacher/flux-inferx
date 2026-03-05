@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"macro":["eq"],"mod":["iter","ops"]};

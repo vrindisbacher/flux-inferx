@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CanonicalTy"],"fn":["is_indexed_slice"],"mod":["pretty"],"struct":["CanonicalConstrTy","Hoister","LocalHoister"],"trait":["HoisterDelegate"]};

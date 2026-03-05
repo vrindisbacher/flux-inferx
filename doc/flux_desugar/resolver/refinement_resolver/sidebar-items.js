@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ScopeKind"],"mod":["errors"],"struct":["IllegalBinderVisitor","ImplicitParamCollector","ParamDef","ParamRes","RefinementResolver","Scope","ScopedVisitorWrapper"],"trait":["ScopedVisitor"],"type":["Result"]};

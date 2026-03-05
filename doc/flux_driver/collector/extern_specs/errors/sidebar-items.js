@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["CannotResolveTraitImpl","DupExternSpec","ExternSpecForLocalDef","InvalidEnumExternSpec","InvalidImplBlock","InvalidItemInInherentImpl","ItemNotInTrait","ItemNotInTraitImpl","MalformedExternSpec","MismatchedGenerics"]};

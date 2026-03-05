@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Candidate"],"fn":["normalize_alias_reft","normalize_projection_ty_with_rustc","structurally_normalize_expr"],"struct":["Normalizer","SortNormalizer","TVarSubst"],"trait":["NormalizeExt"]};

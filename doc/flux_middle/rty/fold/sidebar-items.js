@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"macro":["TrivialTypeTraversalImpls"],"trait":["FallibleTypeFolder","TypeFoldable","TypeFolder","TypeSuperFoldable","TypeSuperVisitable","TypeVisitable","TypeVisitor"]};

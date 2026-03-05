@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["check_crate","collect_specs","encode_and_save_metadata","mir_borrowck","trigger_queries"],"struct":["CrateChecker","FluxCallbacks"]};
