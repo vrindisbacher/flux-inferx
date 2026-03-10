@@ -23,7 +23,7 @@ use rustc_driver::{Callbacks, Compilation};
 use rustc_errors::ErrorGuaranteed;
 use rustc_hir::{
     def::{CtorKind, DefKind},
-    def_id::{LOCAL_CRATE, LocalDefId},
+    def_id::{DefId, LOCAL_CRATE, LocalDefId},
 };
 use rustc_interface::interface::Compiler;
 use rustc_middle::{query, ty::TyCtxt};
@@ -108,36 +108,34 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
             }
         }
 
-        let mut def_ids_to_check: HashSet<LocalDefId> = HashSet::default();
-
-        for local_def_id in genv.tcx().iter_local_def_id() {
-            // if the def id is a source it can be added
-            if genv.tcx().def_kind(local_def_id).is_fn_like() && genv.is_source(local_def_id) {
-                def_ids_to_check.insert(local_def_id);
-                continue;
-            }
-
-            // otherwise check if any of the def ids callers are sources
-            let call_paths = source_call_graph.callers_paths(local_def_id.to_def_id());
-            for path in call_paths {
-                // if any of the def_ids in the path are marked with source attribute, then we should check this def_id
-                if path.iter().any(|def_id| {
-                    match def_id.as_local() {
-                        Some(did) => genv.is_source(did),
-                        None => {
-                            println!("COULD NOT GET LOCAL: {def_id:?}");
-                            false
-                        }
+        let (sources, sinks) = genv.tcx().iter_local_def_id().fold(
+            (Vec::new(), Vec::new()),
+            |(mut sources, mut sinks), local_def_id| {
+                if genv.tcx().def_kind(local_def_id).is_fn_like() {
+                    if genv.is_source(local_def_id) {
+                        sources.push(local_def_id);
                     }
-                }) {
-                    def_ids_to_check.insert(local_def_id);
+                    if genv.is_sink(local_def_id) {
+                        sinks.push(local_def_id);
+                    }
                 }
+                (sources, sinks)
+            },
+        );
+
+        let mut paths_to_check = Vec::new();
+        for source in sources.iter() {
+            for sink in sinks.iter() {
+                let path =
+                    source_call_graph.get_all_paths_from_to(source.to_def_id(), sink.to_def_id());
+                paths_to_check.extend(path);
             }
         }
 
-        println!("{def_ids_to_check:?}");
+        println!("{paths_to_check:?}");
 
-        // Iterate over all def ids that we wanted to check
+        // (VR)TODO: get def ids to check
+        let def_ids_to_check = Vec::new();
         let result = def_ids_to_check
             .into_iter()
             .try_for_each_exhaust(|def_id| ck.check_def_catching_bugs(def_id));

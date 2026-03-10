@@ -48,6 +48,48 @@ impl CallGraph {
     }
 
     /// Gets all of the paths upwards from the start through callers to a top level fn
+    pub fn get_all_paths_from_to(&self, start: DefId, end: DefId) -> Vec<Vec<DefId>> {
+        let mut results = Vec::new();
+        // initialize with start node
+        let mut stack: Vec<Vec<DefId>> = vec![vec![start]];
+
+        while let Some(path) = stack.pop() {
+            let current = *path.last().unwrap();
+
+            if current == end {
+                // Reached the sink, record the path
+                results.push(path);
+                continue;
+            }
+
+            let callees = self
+                .inner
+                .get(&current)
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]);
+
+            if callees.is_empty() {
+                // Reached a root without hitting end, discard this path
+                continue;
+            }
+
+            for &callee in callees {
+                if path.contains(&callee) {
+                    flux_common::bug!(
+                        "flux-cont::call-graph: detected a cycle for {:?}. Recursion is not handled by continuation checking",
+                        callee
+                    );
+                }
+                let mut new_path = path.clone();
+                new_path.push(callee);
+                stack.push(new_path);
+            }
+        }
+
+        results
+    }
+
+    /// Gets all of the paths upwards from the start through callers to a top level fn
     pub fn callers_paths(&self, start: DefId) -> Vec<Vec<DefId>> {
         // build a reverse map from fns to a list of their callers
         let mut reverse: FxHashMap<DefId, Vec<DefId>> = FxHashMap::default();
