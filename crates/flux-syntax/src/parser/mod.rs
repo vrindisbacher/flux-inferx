@@ -55,6 +55,8 @@ enum SyntaxAttr {
     Opaque,
     /// A `#[no_panic_if(...)]` attribute
     NoPanicIf(Expr),
+    /// A `#[source]` attribute
+    Source,
 }
 
 #[derive(Default)]
@@ -445,6 +447,8 @@ fn parse_attr(cx: &mut ParseCtxt, attrs: &mut ParsedAttrs) -> ParseResult {
         attrs
             .syntax
             .push(SyntaxAttr::NoPanicIf(parse_expr(cx, true)?));
+    } else if lookahead.advance_if(sym::source) {
+        attrs.syntax.push(SyntaxAttr::Source);
     } else {
         return Err(lookahead.into_error());
     };

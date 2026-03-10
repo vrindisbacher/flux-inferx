@@ -629,6 +629,24 @@ impl<'genv, 'tcx> Queries<'genv, 'tcx> {
         })
     }
 
+    pub(crate) fn call_graph(
+        &self,
+        genv: GlobalEnv,
+        def_id: DefId,
+    ) -> QueryResult<flux_cont::CallGraph> {
+        // (VR)TODO: Fix this mess
+        def_id.dispatch_query(
+            genv,
+            self,
+            |def_id| {
+                let def_id = def_id.local_id();
+                Ok(flux_cont::build_call_graph(genv.tcx(), &[def_id.to_def_id()]).call_graph)
+            },
+            |def_id| Some(Ok(flux_cont::build_call_graph(genv.tcx(), &[def_id]).call_graph)),
+            |_| Err(QueryErr::Ignored { def_id }),
+        )
+    }
+
     pub(crate) fn no_panic(&self, genv: GlobalEnv, def_id: DefId) -> bool {
         run_with_cache(&self.no_panic, def_id, || {
             def_id.dispatch_query(

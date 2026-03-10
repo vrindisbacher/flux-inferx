@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{collections::HashSet, path::Path};
 
 use flux_common::{bug, cache::QueryCache, iter::IterExt, result::ResultExt};
 use flux_config::{self as config};
@@ -94,49 +94,91 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
 
         let mut ck = CrateChecker::new(genv);
 
-        // Iterate over all def ids including dummy items for extern specs
-        let result = genv
-            .tcx()
-            .iter_local_def_id()
-            .try_for_each_exhaust(|def_id| ck.check_def_catching_bugs(def_id));
+        // a call graph constructed only from fns that are marked with the source attribute
+        let mut source_call_graph = flux_cont::CallGraph::new();
 
-        if config::lean().is_check() || config::lean().is_emit() {
-            lean_encoding::finalize(genv)
-                .unwrap_or_else(|err| bug!("error running lean-check {err:?}"));
+        for local_def_id in genv.tcx().iter_local_def_id() {
+            // check whether the local def id is fn like and is a source
+            if genv.tcx().def_kind(local_def_id).is_fn_like() && genv.is_source(local_def_id) {
+                // if so, then we will want the call graph
+                if let Ok(fn_call_graph) = genv.call_graph(local_def_id) {
+                    // merge the call graph with the other source nodes
+                    source_call_graph.merge(fn_call_graph);
+                }
+            }
         }
 
-        let lean_result = if config::lean().is_check() {
-            genv.iter_local_def_id().try_for_each_exhaust(|def_id| {
-                if genv.proven_externally(def_id).is_some() {
-                    let key = lean_task_key(genv.tcx(), def_id.to_def_id());
-                    // Skip proof check if previously verified successfully.
-                    if config::is_cache_enabled()
-                        && ck
-                            .cache
-                            .lookup_by_key(&key)
-                            .map(|r| matches!(r.lean_status, LeanStatus::Valid))
-                            .unwrap_or(false)
-                    {
-                        return Ok(());
+        let mut def_ids_to_check: HashSet<LocalDefId> = HashSet::default();
+
+        for local_def_id in genv.tcx().iter_local_def_id() {
+            // if the def id is a source it can be added
+            if genv.tcx().def_kind(local_def_id).is_fn_like() && genv.is_source(local_def_id) {
+                def_ids_to_check.insert(local_def_id);
+                continue;
+            }
+
+            // otherwise check if any of the def ids callers are sources
+            let call_paths = source_call_graph.callers_paths(local_def_id.to_def_id());
+            for path in call_paths {
+                // if any of the def_ids in the path are marked with source attribute, then we should check this def_id
+                if path.iter().any(|def_id| {
+                    match def_id.as_local() {
+                        Some(did) => genv.is_source(did),
+                        None => {
+                            println!("COULD NOT GET LOCAL: {def_id:?}");
+                            false
+                        }
                     }
-                    lean_encoding::check_proof(genv, def_id.to_def_id())?;
-                    // Mark as valid in cache so future runs skip re-verification.
-                    ck.cache
-                        .update_result_by_key(&key, |r| r.lean_status = LeanStatus::Valid);
-                    Ok(())
-                } else {
-                    Ok(())
+                }) {
+                    def_ids_to_check.insert(local_def_id);
                 }
-            })
-        } else {
-            Ok(())
-        };
+            }
+        }
+
+        println!("{def_ids_to_check:?}");
+
+        // Iterate over all def ids that we wanted to check
+        let result = def_ids_to_check
+            .into_iter()
+            .try_for_each_exhaust(|def_id| ck.check_def_catching_bugs(def_id));
+
+        // if config::lean().is_check() || config::lean().is_emit() {
+        //     lean_encoding::finalize(genv)
+        //         .unwrap_or_else(|err| bug!("error running lean-check {err:?}"));
+        // }
+
+        // let lean_result = if config::lean().is_check() {
+        //     genv.iter_local_def_id().try_for_each_exhaust(|def_id| {
+        //         if genv.proven_externally(def_id).is_some() {
+        //             let key = lean_task_key(genv.tcx(), def_id.to_def_id());
+        //             // Skip proof check if previously verified successfully.
+        //             if config::is_cache_enabled()
+        //                 && ck
+        //                     .cache
+        //                     .lookup_by_key(&key)
+        //                     .map(|r| matches!(r.lean_status, LeanStatus::Valid))
+        //                     .unwrap_or(false)
+        //             {
+        //                 return Ok(());
+        //             }
+        //             lean_encoding::check_proof(genv, def_id.to_def_id())?;
+        //             // Mark as valid in cache so future runs skip re-verification.
+        //             ck.cache
+        //                 .update_result_by_key(&key, |r| r.lean_status = LeanStatus::Valid);
+        //             Ok(())
+        //         } else {
+        //             Ok(())
+        //         }
+        //     })
+        // } else {
+        //     Ok(())
+        // };
 
         ck.cache.save().unwrap_or(());
 
         tracing::info!("Callbacks::check_crate");
 
-        result.and(lean_result)
+        result
     })
 }
 

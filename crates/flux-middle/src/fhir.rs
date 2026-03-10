@@ -54,6 +54,7 @@ pub enum Attr {
     ShouldFail,
     InferOpts(PartialInferOpts),
     NoPanic,
+    Source,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -74,6 +75,10 @@ impl AttrMap<'_> {
         self.attrs
             .iter()
             .find_map(|attr| if let Attr::Ignore(ignored) = *attr { Some(ignored) } else { None })
+    }
+
+    pub(crate) fn source(&self) -> bool {
+        self.attrs.iter().any(|attr| matches!(attr, Attr::Source))
     }
 
     pub(crate) fn trusted(&self) -> Option<Trusted> {

@@ -3,6 +3,7 @@ use std::{alloc, path::PathBuf, ptr, rc::Rc, slice};
 use flux_arc_interner::List;
 use flux_common::{bug, result::ErrorEmitter};
 use flux_config as config;
+use flux_cont::CallGraph;
 use flux_errors::FluxSession;
 use flux_rustc_bridge::{self, lowering::Lower, mir, ty};
 use flux_syntax::symbols::sym;
@@ -456,6 +457,13 @@ impl<'genv, 'tcx> GlobalEnv<'genv, 'tcx> {
         self.inner.queries.lower_late_bound_vars(self, def_id)
     }
 
+    /// Get the call graph for a function
+    pub fn call_graph(self, def_id: impl IntoQueryParam<DefId>) -> QueryResult<CallGraph> {
+        self.inner
+            .queries
+            .call_graph(self, def_id.into_query_param())
+    }
+
     /// Whether the function is marked with `#[flux::no_panic]`
     pub fn no_panic(self, def_id: impl IntoQueryParam<DefId>) -> bool {
         self.inner.queries.no_panic(self, def_id.into_query_param())
@@ -570,12 +578,19 @@ impl<'genv, 'tcx> GlobalEnv<'genv, 'tcx> {
     }
 
     /// Transitively follow the parent-chain of `def_id` to find the first containing item with an
-    /// explicit `#[flux::trusted(..)]` annotation and return whether that item is trusted or not.
+    /// explicit `#[flux::source]` annotation and return whether that item is a source or not.
     /// If no explicit annotation is found, return `false`.
     pub fn trusted(self, def_id: LocalDefId) -> bool {
         self.traverse_parents(def_id, |did| self.fhir_attr_map(did).trusted())
             .map(|trusted| trusted.to_bool())
             .unwrap_or_else(config::trusted_default)
+    }
+
+    /// Transitively follow the parent-chain of `def_id` to find the first containing item with an
+    /// explicit `#[flux::source]` annotation and return whether that item is a source or not.
+    /// If no explicit annotation is found, return `false`.
+    pub fn is_source(self, def_id: LocalDefId) -> bool {
+        self.traverse_parents_until(def_id, |did| self.fhir_attr_map(did).source())
     }
 
     pub fn trusted_impl(self, def_id: LocalDefId) -> bool {
@@ -614,6 +629,24 @@ impl<'genv, 'tcx> GlobalEnv<'genv, 'tcx> {
     /// Whether the function is marked with `#[proven_externally]`
     pub fn proven_externally(self, def_id: LocalDefId) -> Option<Span> {
         self.fhir_attr_map(def_id).proven_externally()
+    }
+
+    fn traverse_parents_until(
+        self,
+        mut def_id: LocalDefId,
+        mut f: impl FnMut(LocalDefId) -> bool,
+    ) -> bool {
+        loop {
+            if f(def_id) {
+                break true;
+            }
+
+            if let Some(parent) = self.tcx().opt_local_parent(def_id) {
+                def_id = parent;
+            } else {
+                break false;
+            }
+        }
     }
 
     /// Traverse the parent chain of `def_id` until the first node for which `f` returns [`Some`].

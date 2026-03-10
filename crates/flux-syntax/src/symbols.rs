@@ -28,6 +28,7 @@ symbols! {
         no_panic_if,
         ptr_size,
         real,
+        source
     }
 }
 

@@ -24,6 +24,7 @@ flux-refineck.workspace = true
 flux-rustc-bridge.workspace = true
 flux-syntax.workspace = true
 flux-infer.workspace = true
+flux-cont.workspace = true
 
 itertools.workspace = true
 serde.workspace = true
