@@ -641,7 +641,9 @@ pub enum Attr {
     /// A `#[no_panic]` attribute
     NoPanic,
     /// A `#[source]` attribute
-    Source
+    Source,
+    /// A `#[sink]` attribute
+    Sink,
 }
 
 #[derive(Debug)]

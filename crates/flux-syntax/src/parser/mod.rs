@@ -57,6 +57,8 @@ enum SyntaxAttr {
     NoPanicIf(Expr),
     /// A `#[source]` attribute
     Source,
+    /// A `#[sink]` attribute
+    Sink,
 }
 
 #[derive(Default)]
@@ -449,6 +451,8 @@ fn parse_attr(cx: &mut ParseCtxt, attrs: &mut ParsedAttrs) -> ParseResult {
             .push(SyntaxAttr::NoPanicIf(parse_expr(cx, true)?));
     } else if lookahead.advance_if(sym::source) {
         attrs.syntax.push(SyntaxAttr::Source);
+    } else if lookahead.advance_if(sym::sink) {
+        attrs.syntax.push(SyntaxAttr::Sink);
     } else {
         return Err(lookahead.into_error());
     };

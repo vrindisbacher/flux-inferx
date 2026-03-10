@@ -55,6 +55,7 @@ pub enum Attr {
     InferOpts(PartialInferOpts),
     NoPanic,
     Source,
+    Sink,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -79,6 +80,10 @@ impl AttrMap<'_> {
 
     pub(crate) fn source(&self) -> bool {
         self.attrs.iter().any(|attr| matches!(attr, Attr::Source))
+    }
+
+    pub(crate) fn sink(&self) -> bool {
+        self.attrs.iter().any(|attr| matches!(attr, Attr::Sink))
     }
 
     pub(crate) fn trusted(&self) -> Option<Trusted> {
