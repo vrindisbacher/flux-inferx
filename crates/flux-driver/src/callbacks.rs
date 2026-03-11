@@ -1,12 +1,9 @@
 use std::{collections::HashSet, path::Path};
 
-use flux_common::{bug, cache::QueryCache, iter::IterExt, result::ResultExt};
+use flux_common::{cache::QueryCache, iter::IterExt, result::ResultExt};
 use flux_config::{self as config};
 use flux_errors::FluxSession;
-use flux_infer::{
-    fixpoint_encoding::{FixQueryCache, LeanStatus, lean_task_key},
-    lean_encoding,
-};
+use flux_infer::{fixpoint_encoding::FixQueryCache, lean_encoding};
 use flux_metadata::CStore;
 use flux_middle::{
     Specs,
@@ -132,10 +129,16 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
             }
         }
 
-        println!("{paths_to_check:?}");
+        let def_ids_to_check =
+            paths_to_check
+                .iter()
+                .flatten()
+                .fold(HashSet::new(), |mut acc, def_id| {
+                    let local = def_id.as_local().unwrap();
+                    acc.insert(local);
+                    acc
+                });
 
-        // (VR)TODO: get def ids to check
-        let def_ids_to_check = Vec::new();
         let result = def_ids_to_check
             .into_iter()
             .try_for_each_exhaust(|def_id| ck.check_def_catching_bugs(def_id));
