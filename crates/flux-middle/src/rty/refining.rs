@@ -575,7 +575,7 @@ impl rty::PolyFnSig {
             let output = fn_sig
                 .output
                 .map(|output| rty::FnOutput { ret: kvar_inserter.fold_ty(&output.ret), ensures });
-            genv.feed_kvars(def_id, kvar_inserter.kvar_map);
+            genv.feed_kvars(kvar_inserter.kvar_map);
             let sig = rty::FnSig {
                 abi: fn_sig.abi,
                 safety: fn_sig.safety,
@@ -780,7 +780,7 @@ fn make_kvar(
     // case we always want every param to be an argument of the kvar
     let num_self_args = args.len();
     let arg_exprs = args.into_iter().map(|var| rty::Expr::var(var)).collect();
-    kvar_map.insert(kvid.as_u32(), KvarInfo { sorts });
+    kvar_map.insert(kvid.as_u32(), KvarInfo { sorts, self_args: num_self_args });
     let ret = rty::KVar { kvid, self_args: num_self_args, args: arg_exprs };
     ret
 }

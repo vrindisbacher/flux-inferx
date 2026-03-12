@@ -1,4 +1,4 @@
-use std::{alloc, cell::RefCell, path::PathBuf, ptr, rc::Rc, slice};
+use std::{alloc, cell::RefCell, collections::HashMap, path::PathBuf, ptr, rc::Rc, slice};
 
 use flux_arc_interner::List;
 use flux_common::{bug, result::ErrorEmitter};
@@ -7,7 +7,7 @@ use flux_cont::CallGraph;
 use flux_errors::FluxSession;
 use flux_rustc_bridge::{self, lowering::Lower, mir, ty};
 use flux_syntax::symbols::sym;
-use rustc_data_structures::unord::{UnordMap, UnordSet};
+use rustc_data_structures::unord::UnordSet;
 use rustc_hir::{
     LangItem,
     def::DefKind,
@@ -33,13 +33,14 @@ use crate::{
     },
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct KvarInfo {
     /// The sorts of the kvar in the order in which they appear in the
     /// arguments.
+    pub self_args: usize,
     pub sorts: Vec<rty::Sort>,
 }
-pub type KvarMap = UnordMap<u32, KvarInfo>;
+pub type KvarMap = HashMap<u32, KvarInfo>;
 
 #[derive(Clone, Copy)]
 pub struct GlobalEnv<'genv, 'tcx> {
@@ -53,7 +54,7 @@ struct GlobalEnvInner<'genv, 'tcx> {
     cstore: Box<CrateStoreDyn>,
     queries: Queries<'genv, 'tcx>,
     tempdir: TempDir,
-    kvars: RefCell<UnordMap<DefId, Rc<KvarMap>>>,
+    kvars: RefCell<KvarMap>,
     kvid: RefCell<rty::KVid>,
 }
 
@@ -156,12 +157,16 @@ impl<'genv, 'tcx> GlobalEnv<'genv, 'tcx> {
         self.tcx().def_kind(def_id.into_query_param())
     }
 
-    pub fn feed_kvars(&self, def_id: DefId, kv: KvarMap) {
-        self.inner.kvars.borrow_mut().insert(def_id, Rc::new(kv));
+    pub fn feed_kvars(&self, kv: KvarMap) {
+        let mut map = self.inner.kvars.borrow_mut();
+        for (key, val) in kv {
+            map.insert(key, val);
+        }
     }
 
-    pub fn kvars_of(&self, def_id: &DefId) -> Option<Rc<KvarMap>> {
-        self.inner.kvars.borrow().get(&def_id).cloned()
+    pub fn all_def_id_kvars(&self) -> Vec<(u32, KvarInfo)> {
+        let map = self.inner.kvars.borrow();
+        map.iter().map(|(k, v)| (*k, v.clone())).collect()
     }
 
     pub fn get_next_kvid(&self) -> rty::KVid {

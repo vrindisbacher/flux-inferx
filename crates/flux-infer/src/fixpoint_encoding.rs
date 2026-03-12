@@ -1044,7 +1044,7 @@ where
         kvar: &rty::KVar,
         bindings: &mut Vec<fixpoint::Bind>,
     ) -> QueryResult<fixpoint::Pred> {
-        let decl = self.kvars.get(kvar.kvid);
+        let decl = self.kvars.get(&kvar.kvid).expect("Unknown KVar");
         let kvids = self.kcx.declare(kvar.kvid, decl, &self.ecx.backend);
 
         let all_args = self.ecx.exprs_to_fixpoint(&kvar.args, &mut self.scx)?;
@@ -1141,7 +1141,8 @@ impl KVarEncodingCtxt {
             .iter()
             .flat_map(|(orig, range)| {
                 let mut all_sorts = kvars
-                    .get(*orig)
+                    .get(orig)
+                    .expect("Unknown KVar")
                     .sorts
                     .iter()
                     .map(|s| scx.sort_to_fixpoint(s))
@@ -1270,7 +1271,7 @@ impl LocalVarEnv {
 }
 
 pub struct KVarGen {
-    kvars: IndexVec<rty::KVid, KVarDecl>,
+    kvars: HashMap<rty::KVid, KVarDecl>,
     /// If true, generate dummy [holes] instead of kvars. Used during shape mode to avoid generating
     /// unnecessary kvars.
     ///
@@ -1280,11 +1281,21 @@ pub struct KVarGen {
 
 impl KVarGen {
     pub(crate) fn new(dummy: bool) -> Self {
-        Self { kvars: IndexVec::new(), dummy }
+        Self { kvars: HashMap::new(), dummy }
     }
 
-    fn get(&self, kvid: rty::KVid) -> &KVarDecl {
-        &self.kvars[kvid]
+    fn get(&self, kvid: &rty::KVid) -> Option<&KVarDecl> {
+        self.kvars.get(kvid)
+    }
+
+    pub fn add_kvars_from_fn_sig(
+        &mut self,
+        kvid: rty::KVid,
+        self_args: usize,
+        sorts: Vec<rty::Sort>,
+    ) {
+        self.kvars
+            .insert(kvid, KVarDecl { self_args, sorts, encoding: KVarEncoding::Single });
     }
 
     /// Generate a fresh [kvar] under several layers of [binders]. Each layer may contain any kind
@@ -1307,6 +1318,7 @@ impl KVarGen {
     /// [`BoundVariableKind::Refine`]: rty::BoundVariableKind::Refine
     pub fn fresh(
         &mut self,
+        genv: GlobalEnv,
         binders: &[rty::BoundVariableKinds],
         scope: impl IntoIterator<Item = (rty::Var, rty::Sort)>,
         encoding: KVarEncoding,
@@ -1333,16 +1345,22 @@ impl KVarGen {
             scope,
         );
         let [.., last] = binders else {
-            return self.fresh_inner(0, [], encoding);
+            return self.fresh_inner(genv, 0, [], encoding);
         };
         let num_self_args = last
             .iter()
             .filter(|var| matches!(var, rty::BoundVariableKind::Refine(..)))
             .count();
-        self.fresh_inner(num_self_args, args, encoding)
+        self.fresh_inner(genv, num_self_args, args, encoding)
     }
 
-    fn fresh_inner<A>(&mut self, self_args: usize, args: A, encoding: KVarEncoding) -> rty::Expr
+    fn fresh_inner<A>(
+        &mut self,
+        genv: GlobalEnv,
+        self_args: usize,
+        args: A,
+        encoding: KVarEncoding,
+    ) -> rty::Expr
     where
         A: IntoIterator<Item = (rty::Var, rty::Sort)>,
     {
@@ -1363,9 +1381,9 @@ impl KVarGen {
             });
         }
 
-        let kvid = self
-            .kvars
-            .push(KVarDecl { self_args: flattened_self_args, sorts, encoding });
+        let kvid = genv.get_next_kvid();
+        self.kvars
+            .insert(kvid, KVarDecl { self_args: flattened_self_args, sorts, encoding });
 
         let kvar = rty::KVar::new(kvid, flattened_self_args, exprs);
         rty::Expr::kvar(kvar)
