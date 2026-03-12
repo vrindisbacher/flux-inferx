@@ -969,7 +969,15 @@ impl<'genv, 'tcx> Queries<'genv, 'tcx> {
             def_id.dispatch_query(
                 genv,
                 self,
-                |def_id| (self.providers.fn_sig)(genv, def_id),
+                |def_id| {
+                    let mut fn_sig = (self.providers.fn_sig)(genv, def_id)?;
+                    // (VR)TODO: Make sure that we only do this for functions that have no specs
+
+                    // instantiate kvars
+                    let inner = fn_sig.0.add_kvars(genv, def_id.resolved_id())?;
+                    fn_sig = rty::EarlyBinder(inner);
+                    Ok(fn_sig)
+                },
                 |def_id| genv.cstore().fn_sig(def_id),
                 |def_id| {
                     let tcx = genv.tcx();
@@ -998,6 +1006,10 @@ impl<'genv, 'tcx> Queries<'genv, 'tcx> {
                             fn_sig
                         });
                     }
+
+                    // (VR)TODO: Make sure that we only do this for functions that have no specs
+                    // instantiate kvars
+                    poly_sig = poly_sig.add_kvars(genv, def_id)?;
 
                     Ok(rty::EarlyBinder(poly_sig))
                 },

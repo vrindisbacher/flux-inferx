@@ -1085,6 +1085,10 @@ impl Sort {
         matches!(self, Sort::Tuple(sorts) if sorts.is_empty())
     }
 
+    pub fn is_param(&self) -> bool {
+        matches!(self, Self::Param(_))
+    }
+
     pub fn is_unit_adt(&self) -> Option<DefId> {
         if let Sort::App(SortCtor::Adt(sort_def), _) = self
             && let Some(variant) = sort_def.opt_struct_variant()

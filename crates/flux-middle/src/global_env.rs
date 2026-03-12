@@ -1,4 +1,4 @@
-use std::{alloc, path::PathBuf, ptr, rc::Rc, slice};
+use std::{alloc, cell::RefCell, path::PathBuf, ptr, rc::Rc, slice};
 
 use flux_arc_interner::List;
 use flux_common::{bug, result::ErrorEmitter};
@@ -7,7 +7,7 @@ use flux_cont::CallGraph;
 use flux_errors::FluxSession;
 use flux_rustc_bridge::{self, lowering::Lower, mir, ty};
 use flux_syntax::symbols::sym;
-use rustc_data_structures::unord::UnordSet;
+use rustc_data_structures::unord::{UnordMap, UnordSet};
 use rustc_hir::{
     LangItem,
     def::DefKind,
@@ -33,6 +33,14 @@ use crate::{
     },
 };
 
+#[derive(Debug)]
+pub struct KvarInfo {
+    /// The sorts of the kvar in the order in which they appear in the
+    /// arguments.
+    pub sorts: Vec<rty::Sort>,
+}
+pub type KvarMap = UnordMap<u32, KvarInfo>;
+
 #[derive(Clone, Copy)]
 pub struct GlobalEnv<'genv, 'tcx> {
     inner: &'genv GlobalEnvInner<'genv, 'tcx>,
@@ -45,6 +53,8 @@ struct GlobalEnvInner<'genv, 'tcx> {
     cstore: Box<CrateStoreDyn>,
     queries: Queries<'genv, 'tcx>,
     tempdir: TempDir,
+    kvars: RefCell<UnordMap<DefId, Rc<KvarMap>>>,
+    kvid: RefCell<rty::KVid>,
 }
 
 impl<'tcx> GlobalEnv<'_, 'tcx> {
@@ -60,7 +70,9 @@ impl<'tcx> GlobalEnv<'_, 'tcx> {
         // files in it.
         let tempdir = TempDir::new_in(lean_parent_dir(tcx)).unwrap();
         let queries = Queries::new(providers);
-        let inner = GlobalEnvInner { tcx, sess, cstore, arena, queries, tempdir };
+        let kvars = Default::default();
+        let kvid = RefCell::new(rty::KVid::from(0_usize));
+        let inner = GlobalEnvInner { tcx, sess, cstore, arena, queries, tempdir, kvars, kvid };
         f(GlobalEnv { inner: &inner })
     }
 }
@@ -142,6 +154,20 @@ impl<'genv, 'tcx> GlobalEnv<'genv, 'tcx> {
 
     pub fn def_kind(&self, def_id: impl IntoQueryParam<DefId>) -> DefKind {
         self.tcx().def_kind(def_id.into_query_param())
+    }
+
+    pub fn feed_kvars(&self, def_id: DefId, kv: KvarMap) {
+        self.inner.kvars.borrow_mut().insert(def_id, Rc::new(kv));
+    }
+
+    pub fn kvars_of(&self, def_id: &DefId) -> Option<Rc<KvarMap>> {
+        self.inner.kvars.borrow().get(&def_id).cloned()
+    }
+
+    pub fn get_next_kvid(&self) -> rty::KVid {
+        let res = *self.inner.kvid.borrow();
+        *self.inner.kvid.borrow_mut() += 1;
+        res
     }
 
     /// Allocates space to store `cap` elements of type `T`.

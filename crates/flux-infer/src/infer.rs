@@ -272,7 +272,7 @@ impl<'genv, 'tcx> InferCtxtRoot<'genv, 'tcx> {
         if config::dump_constraint() {
             dbg::dump_item_info(self.genv.tcx(), def_id.resolved_id(), ext, &refine_tree).unwrap();
         }
-        refine_tree.simplify(self.genv);
+        // refine_tree.simplify(self.genv);
         if config::dump_constraint() {
             let simp_ext = format!("simp.{ext}");
             dbg::dump_item_info(self.genv.tcx(), def_id.resolved_id(), simp_ext, &refine_tree)
@@ -284,6 +284,13 @@ impl<'genv, 'tcx> InferCtxtRoot<'genv, 'tcx> {
             flux_config::SmtSolver::CVC5 => liquid_fixpoint::SmtSolver::CVC5,
         };
 
+        let id = match def_id {
+            MaybeExternId::Extern(_local_id, def_id) => def_id,
+            MaybeExternId::Local(local_id) => local_id.into(),
+        };
+        if let Some(known_kvars) = self.genv.kvars_of(&id) {
+            println!("{known_kvars:?}");
+        }
         let mut fcx = FixpointCtxt::new(self.genv, def_id, kvars, Backend::Fixpoint);
         let cstr = refine_tree.to_fixpoint(&mut fcx)?;
 
