@@ -965,17 +965,23 @@ impl<'genv, 'tcx> Queries<'genv, 'tcx> {
         genv: GlobalEnv,
         def_id: DefId,
     ) -> QueryResult<rty::EarlyBinder<rty::PolyFnSig>> {
+        println!("{def_id:?}");
         run_with_cache(&self.fn_sig, def_id, || {
             def_id.dispatch_query(
                 genv,
                 self,
                 |def_id| {
                     let mut fn_sig = (self.providers.fn_sig)(genv, def_id)?;
-                    // (VR)TODO: Make sure that we only do this for functions that have no specs
 
-                    // instantiate kvars
-                    let inner = fn_sig.0.add_kvars(genv, def_id.resolved_id())?;
-                    fn_sig = rty::EarlyBinder(inner);
+                    let specs = genv.collect_specs();
+                    let item_has_specs = item_has_specs(&def_id.resolved_id(), specs);
+                    // instantiate kvars if the fn does not have any spec
+                    if !item_has_specs {
+                        println!("ADDING KVARS");
+                        let inner = fn_sig.0.add_kvars(genv, def_id.resolved_id())?;
+                        fn_sig = rty::EarlyBinder(inner);
+                    }
+
                     Ok(fn_sig)
                 },
                 |def_id| genv.cstore().fn_sig(def_id),
@@ -1007,15 +1013,53 @@ impl<'genv, 'tcx> Queries<'genv, 'tcx> {
                         });
                     }
 
-                    // (VR)TODO: Make sure that we only do this for functions that have no specs
-                    // instantiate kvars
-                    poly_sig = poly_sig.add_kvars(genv, def_id)?;
+                    let specs = genv.collect_specs();
+                    let item_has_specs = item_has_specs(&def_id, specs);
+                    if !item_has_specs {
+                        println!("ADDING KVARS");
+                        poly_sig = poly_sig.add_kvars(genv, def_id)?;
+                    }
 
                     Ok(rty::EarlyBinder(poly_sig))
                 },
             )
         })
     }
+}
+
+fn item_has_specs(def_id: &DefId, specs: &crate::Specs) -> bool {
+    let did = match def_id.as_local() {
+        Some(did) => did,
+        None => {
+            // This means the def_id is for some item in an external crate
+            //
+            // This is definitely more nuanced but for now just return false
+            return false;
+        }
+    };
+
+    let owner_id = rustc_hir::OwnerId { def_id: did };
+    if let Some(item) = specs.get_item(owner_id.clone()) {
+        if let flux_syntax::surface::ItemKind::Fn(fn_sig) = &item.kind {
+            if fn_sig.is_some() {
+                return true;
+            }
+        }
+    }
+
+    if let Some(trait_item) = specs.get_trait_item(owner_id.clone()) {
+        if trait_item.sig.is_some() {
+            return true;
+        }
+    }
+
+    if let Some(impl_item) = specs.get_impl_item(owner_id) {
+        if impl_item.sig.is_some() {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /// Logic to *dispatch* a `def_id` to a provider (`local`, `external`, or `default`).
