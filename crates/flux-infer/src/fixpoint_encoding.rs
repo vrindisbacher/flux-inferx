@@ -1045,7 +1045,9 @@ where
         bindings: &mut Vec<fixpoint::Bind>,
     ) -> QueryResult<fixpoint::Pred> {
         let decl = self.kvars.get(&kvar.kvid).expect("Unknown KVar");
-        let kvids = self.kcx.declare(kvar.kvid, decl, &self.ecx.backend);
+        let kvids = self
+            .kcx
+            .declare(self.genv, kvar.kvid, decl, &self.ecx.backend);
 
         let all_args = self.ecx.exprs_to_fixpoint(&kvar.args, &mut self.scx)?;
 
@@ -1111,16 +1113,31 @@ impl KVarEncodingCtxt {
     /// [`fixpoint::KVid`]'s to it.
     fn declare(
         &mut self,
+        genv: GlobalEnv,
         kvid: rty::KVid,
         decl: &KVarDecl,
         backend: &Backend,
     ) -> Range<fixpoint::KVid> {
         // The start of the next range
-        let start = self
-            .ranges
-            .last()
-            .map_or(fixpoint::KVid::from_u32(0), |(_, r)| r.end);
 
+        // get the encoding
+        let single_encoding =
+            matches!(decl.encoding, KVarEncoding::Single) || matches!(backend, Backend::Lean);
+
+        let range = if single_encoding {
+            // we can just use the kvid id because it was generated from global state
+            let start = fixpoint::KVid::from_u32(kvid.as_u32());
+            start..start + 1
+        } else {
+            // this will be expanded to multiple kvars. This doesn't matter for the purposes
+            // of inference, we just need to make sure that there are no name clashes so
+            // we need to get new kvid id because kvids are generated from global state
+            let start = fixpoint::KVid::from_u32(genv.get_next_kvid().as_u32());
+            let n = usize::max(decl.self_args, 1);
+            start..start + n
+        };
+
+        let start = range.start;
         self.ranges
             .entry(kvid)
             .or_insert_with(|| {
