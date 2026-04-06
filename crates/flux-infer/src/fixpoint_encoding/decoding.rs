@@ -15,10 +15,7 @@ impl<'genv, 'tcx, Tag> FixpointCtxt<'genv, 'tcx, Tag>
 where
     Tag: std::hash::Hash + Eq + Copy,
 {
-    pub fn fixpoint_to_solution(
-        &mut self,
-        sol: &FixpointSolution,
-    ) -> rty::Binder<rty::Expr> {
+    pub fn fixpoint_to_solution(&mut self, sol: &FixpointSolution) -> rty::Binder<rty::Expr> {
         let mut vars = vec![];
         let mut sorts = vec![];
         for (var, sort) in &sol.0 {
