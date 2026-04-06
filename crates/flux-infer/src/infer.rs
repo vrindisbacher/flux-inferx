@@ -1,4 +1,4 @@
-use std::{cell::RefCell, fmt, iter};
+use std::{cell::RefCell, collections::HashMap, fmt, iter};
 
 use flux_common::{bug, dbg, tracked_span_assert_eq, tracked_span_bug, tracked_span_dbg_assert_eq};
 use flux_config::{self as config, InferOpts, OverflowMode, RawDerefMode};
@@ -20,6 +20,7 @@ use flux_middle::{
     },
 };
 use itertools::{Itertools, izip};
+use liquid_fixpoint::Task;
 use rustc_hir::def_id::{DefId, LocalDefId};
 use rustc_macros::extension;
 use rustc_middle::{
@@ -33,7 +34,7 @@ use crate::{
     evars::{EVarState, EVarStore},
     fixpoint_encoding::{
         Answer, Backend, FixQueryCache, FixpointCtxt, KVarEncoding, KVarGen, KVarSolutions,
-        lean_task_key,
+        fixpoint::FixpointTypes, lean_task_key,
     },
     lean_encoding::log_proof,
     projections::NormalizeExt as _,
@@ -82,7 +83,7 @@ pub enum ConstrReason {
     Overflow,
     Underflow,
     Subtype(SubtypeReason),
-    NoPanic(DefId),
+    // NoPanic(DefId),
     Other,
 }
 
@@ -260,6 +261,8 @@ impl<'genv, 'tcx> InferCtxtRoot<'genv, 'tcx> {
         cache: &mut FixQueryCache,
         def_id: MaybeExternId,
         kind: FixpointQueryKind,
+        def_id_to_cstr: &mut HashMap<DefId, Task<FixpointTypes>>,
+        def_id_to_fixpoint_cstr: &mut HashMap<DefId, FixpointCtxt<'genv, 'tcx, Tag>>,
     ) -> QueryResult<Answer<Tag>> {
         let inner = self.inner.into_inner();
         let mut kvars = inner.kvars;
@@ -296,7 +299,6 @@ impl<'genv, 'tcx> InferCtxtRoot<'genv, 'tcx> {
 
         let mut fcx = FixpointCtxt::new(self.genv, def_id, kvars, Backend::Fixpoint);
         let cstr = refine_tree.to_fixpoint(&mut fcx)?;
-        println!("{cstr}");
 
         // skip checking trivial constraints
         let count = cstr.concrete_head_count();
@@ -307,8 +309,14 @@ impl<'genv, 'tcx> InferCtxtRoot<'genv, 'tcx> {
         }
 
         let task = fcx.create_task(def_id, cstr, self.opts.scrape_quals, backend)?;
+
+        let did = def_id.resolved_id();
+
         let result = fcx.run_task(cache, def_id, kind, &task)?;
-        Ok(fcx.result_to_answer(result))
+        let res = fcx.result_to_answer(result);
+        def_id_to_cstr.insert(did, task.clone());
+        def_id_to_fixpoint_cstr.insert(did, fcx);
+        Ok(res)
     }
 
     pub fn split(self) -> (RefineTree, KVarGen) {

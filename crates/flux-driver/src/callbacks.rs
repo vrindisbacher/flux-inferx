@@ -1,9 +1,16 @@
-use std::{collections::HashSet, path::Path};
+use std::{
+    collections::{BTreeSet, HashMap, HashSet},
+    path::Path,
+};
 
-use flux_common::{cache::QueryCache, iter::IterExt, result::ResultExt};
+use flux_common::{cache::QueryCache, iter::IterExt, result::ResultExt, tracked_span_bug};
 use flux_config::{self as config};
 use flux_errors::FluxSession;
-use flux_infer::{fixpoint_encoding::FixQueryCache, lean_encoding};
+use flux_infer::{
+    fixpoint_encoding::{FixQueryCache, FixpointCtxt, FixpointSolution, fixpoint, fixpoint::Task},
+    infer::Tag,
+    lean_encoding,
+};
 use flux_metadata::CStore;
 use flux_middle::{
     Specs,
@@ -27,7 +34,11 @@ use rustc_middle::{query, ty::TyCtxt};
 use rustc_session::config::OutputType;
 use rustc_span::FileName;
 
-use crate::{DEFAULT_LOCALE_RESOURCES, collector::SpecCollector};
+use crate::{
+    DEFAULT_LOCALE_RESOURCES,
+    collector::SpecCollector,
+    interpreter::{Env, Interpreter, Simplifier},
+};
 
 #[derive(Default)]
 pub struct FluxCallbacks;
@@ -143,6 +154,49 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
             .into_iter()
             .try_for_each_exhaust(|def_id| ck.check_def_catching_bugs(def_id));
 
+        let mut tasks = ck.def_id_to_cstr_map.drain().map(|(_, t)| t);
+
+        if let Some(mut mega_task) = tasks.next() {
+            for task in tasks {
+                mega_task.merge(task);
+            }
+
+            // add cut kvar for sink to constraint
+            if let Some(cut_kvar) = genv.get_sink_kvar() {
+                mega_task.add_cut_kvar(flux_infer::fixpoint_encoding::fixpoint::KVid::from_u32(
+                    cut_kvar.kvid.as_u32(),
+                ));
+            }
+
+            println!("{}", mega_task);
+
+            let verification_result = mega_task
+                .run()
+                .unwrap_or_else(|err| tracked_span_bug!("failed to run fixpoint: {err}"));
+
+            let mut ctxs = ck.def_id_to_fixpoint_ctx.drain().map(|(_, c)| c);
+            if let Some(mut base_fcx) = ctxs.next() {
+                for ctx in ctxs {
+                    base_fcx.merge(ctx);
+                }
+
+                let kvar_solutions =
+                    base_fcx.parse_kvar_solutions(&verification_result.non_cuts_solution);
+
+                for (kvar_id, sol) in kvar_solutions.iter() {
+                    let res = base_fcx.fixpoint_to_solution(sol);
+                    println!("{kvar_id:?}: {res:?}");
+                }
+
+                println!("{:?}", verification_result.solution);
+                let cut_sols = base_fcx.parse_kvar_solutions(&verification_result.solution);
+                for (kvar_id, sol) in cut_sols.iter() {
+                    let res = base_fcx.fixpoint_to_solution(sol);
+                    println!("{kvar_id:?}: {res:?}");
+                }
+            }
+        }
+
         // if config::lean().is_check() || config::lean().is_emit() {
         //     lean_encoding::finalize(genv)
         //         .unwrap_or_else(|err| bug!("error running lean-check {err:?}"));
@@ -210,11 +264,18 @@ fn encode_and_save_metadata(genv: GlobalEnv) {
 struct CrateChecker<'genv, 'tcx> {
     genv: GlobalEnv<'genv, 'tcx>,
     cache: FixQueryCache,
+    def_id_to_cstr_map: HashMap<DefId, Task>,
+    def_id_to_fixpoint_ctx: HashMap<DefId, FixpointCtxt<'genv, 'tcx, Tag>>,
 }
 
 impl<'genv, 'tcx> CrateChecker<'genv, 'tcx> {
     fn new(genv: GlobalEnv<'genv, 'tcx>) -> Self {
-        Self { genv, cache: QueryCache::load() }
+        Self {
+            genv,
+            cache: QueryCache::load(),
+            def_id_to_cstr_map: HashMap::new(),
+            def_id_to_fixpoint_ctx: HashMap::new(),
+        }
     }
 
     fn matches_def(&self, def_id: MaybeExternId, def: &str) -> bool {
@@ -335,7 +396,13 @@ impl<'genv, 'tcx> CrateChecker<'genv, 'tcx> {
             DefKind::Fn | DefKind::AssocFn => {
                 let Some(local_id) = def_id.as_local() else { return Ok(()) };
                 if is_fn_with_body {
-                    refineck::check_fn(genv, &mut self.cache, local_id)?;
+                    refineck::check_fn(
+                        genv,
+                        &mut self.cache,
+                        local_id,
+                        &mut self.def_id_to_cstr_map,
+                        &mut self.def_id_to_fixpoint_ctx,
+                    )?;
                 }
             }
             DefKind::Enum => {
@@ -350,6 +417,8 @@ impl<'genv, 'tcx> CrateChecker<'genv, 'tcx> {
                     def_id,
                     enum_def.invariants,
                     &adt_def,
+                    &mut self.def_id_to_cstr_map,
+                    &mut self.def_id_to_fixpoint_ctx,
                 )?;
             }
             DefKind::Struct => {
@@ -368,7 +437,14 @@ impl<'genv, 'tcx> CrateChecker<'genv, 'tcx> {
                 if let StaticInfo::Known(ty) = genv.static_info(def_id).emit(&genv)?
                     && let Some(local_id) = def_id.as_local()
                 {
-                    refineck::check_static(genv, &mut self.cache, local_id, ty)?;
+                    refineck::check_static(
+                        genv,
+                        &mut self.cache,
+                        local_id,
+                        ty,
+                        &mut self.def_id_to_cstr_map,
+                        &mut self.def_id_to_fixpoint_ctx,
+                    )?;
                 }
             }
             _ => (),

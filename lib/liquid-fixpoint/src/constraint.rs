@@ -210,6 +210,7 @@ impl<T: Types> Sort<T> {
 }
 
 #[derive_where(Hash, Debug)]
+#[derive(Clone)]
 pub struct FunSort<T: Types> {
     pub params: usize,
     pub inputs: Vec<Sort<T>>,

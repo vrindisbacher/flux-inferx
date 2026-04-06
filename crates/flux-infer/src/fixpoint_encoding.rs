@@ -550,14 +550,14 @@ pub enum Backend {
 }
 
 pub struct FixpointCtxt<'genv, 'tcx, T: Eq + Hash> {
-    comments: Vec<String>,
-    genv: GlobalEnv<'genv, 'tcx>,
-    kvars: KVarGen,
-    scx: SortEncodingCtxt,
-    kcx: KVarEncodingCtxt,
-    ecx: ExprEncodingCtxt<'genv, 'tcx>,
-    tags: IndexVec<TagIdx, T>,
-    tags_inv: UnordMap<T, TagIdx>,
+    pub comments: Vec<String>,
+    pub genv: GlobalEnv<'genv, 'tcx>,
+    pub kvars: KVarGen,
+    pub scx: SortEncodingCtxt,
+    pub kcx: KVarEncodingCtxt,
+    pub ecx: ExprEncodingCtxt<'genv, 'tcx>,
+    pub tags: IndexVec<TagIdx, T>,
+    pub tags_inv: UnordMap<T, TagIdx>,
 }
 
 pub type FixQueryCache = QueryCache<VerificationResult<TagIdx>>;
@@ -589,6 +589,14 @@ where
             tags: IndexVec::new(),
             tags_inv: Default::default(),
         }
+    }
+
+    pub fn merge(&mut self, other: Self) {
+        for (kvid, kvar) in other.kvars.kvars {
+            self.kvars.add(kvid, kvar);
+        }
+        self.kcx.merge(other.kcx);
+        self.ecx.const_env.merge(other.ecx.const_env);
     }
 
     pub(crate) fn create_task(
@@ -651,6 +659,7 @@ where
             scrape_quals,
             solver,
             data_decls: self.scx.encode_data_decls(self.genv)?,
+            cut_kvars: Vec::new(),
         };
 
         if config::dump_constraint() {
@@ -660,7 +669,7 @@ where
         Ok(task)
     }
 
-    pub(crate) fn run_task(
+    pub fn run_task(
         &mut self,
         cache: &mut FixQueryCache,
         def_id: MaybeExternId,
@@ -720,7 +729,7 @@ where
         }
     }
 
-    fn parse_kvar_solutions(
+    pub fn parse_kvar_solutions(
         &mut self,
         kvar_binds: &[KVarBind],
     ) -> FxIndexMap<fixpoint::KVid, FixpointSolution> {
@@ -1102,7 +1111,7 @@ fn const_to_fixpoint(cst: rty::Constant) -> fixpoint::Expr {
 ///
 /// See [`KVarEncoding`]
 #[derive(Default)]
-struct KVarEncodingCtxt {
+pub struct KVarEncodingCtxt {
     /// A map from a [`rty::KVid`] to the range of [`fixpoint::KVid`]s that will be used to
     /// encode it.
     ranges: FxIndexMap<rty::KVid, Range<fixpoint::KVid>>,
@@ -1151,6 +1160,12 @@ impl KVarEncodingCtxt {
                 }
             })
             .clone()
+    }
+
+    pub fn merge(&mut self, other: KVarEncodingCtxt) {
+        for (kvid, range) in other.ranges {
+            self.ranges.entry(kvid).or_insert(range);
+        }
     }
 
     fn encode_kvars(&self, kvars: &KVarGen, scx: &mut SortEncodingCtxt) -> Vec<fixpoint::KVarDecl> {
@@ -1288,7 +1303,7 @@ impl LocalVarEnv {
 }
 
 pub struct KVarGen {
-    kvars: HashMap<rty::KVid, KVarDecl>,
+    pub kvars: HashMap<rty::KVid, KVarDecl>,
     /// If true, generate dummy [holes] instead of kvars. Used during shape mode to avoid generating
     /// unnecessary kvars.
     ///
@@ -1297,12 +1312,16 @@ pub struct KVarGen {
 }
 
 impl KVarGen {
-    pub(crate) fn new(dummy: bool) -> Self {
+    pub fn new(dummy: bool) -> Self {
         Self { kvars: HashMap::new(), dummy }
     }
 
     fn get(&self, kvid: &rty::KVid) -> Option<&KVarDecl> {
         self.kvars.get(kvid)
+    }
+
+    pub fn add(&mut self, kvid: rty::KVid, decl: KVarDecl) {
+        self.kvars.insert(kvid, decl);
     }
 
     pub fn add_kvars_from_fn_sig(
@@ -1408,7 +1427,7 @@ impl KVarGen {
 }
 
 #[derive(Clone)]
-struct KVarDecl {
+pub struct KVarDecl {
     self_args: usize,
     sorts: Vec<rty::Sort>,
     encoding: KVarEncoding,
@@ -1449,6 +1468,15 @@ struct ConstEnv<'tcx> {
 }
 
 impl<'tcx> ConstEnv<'tcx> {
+    fn merge(&mut self, other: ConstEnv<'tcx>) {
+        for (gvar, key) in other.const_map_rev {
+            self.const_map_rev.entry(gvar).or_insert(key);
+        }
+        for (did, var) in other.fun_decl_map {
+            self.fun_decl_map.entry(did).or_insert(var);
+        }
+    }
+
     fn get_or_insert(
         &mut self,
         key: ConstKey<'tcx>,

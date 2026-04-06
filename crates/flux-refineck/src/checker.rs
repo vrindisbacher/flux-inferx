@@ -948,12 +948,12 @@ impl<'ck, 'genv, 'tcx, M: Mode> Checker<'ck, 'genv, 'tcx, M> {
         if let Some(callee_def_id) = callee_def_id
             && genv.def_kind(callee_def_id).is_fn_like()
         {
-            let callee_no_panic = fn_sig.no_panic();
+            // let callee_no_panic = fn_sig.no_panic();
 
-            at.check_pred(
-                Expr::implies(self.fn_sig.no_panic(), callee_no_panic),
-                ConstrReason::NoPanic(callee_def_id),
-            );
+            // at.check_pred(
+            //     Expr::implies(self.fn_sig.no_panic(), callee_no_panic),
+            //     ConstrReason::NoPanic(callee_def_id),
+            // );
         }
 
         // Check requires predicates

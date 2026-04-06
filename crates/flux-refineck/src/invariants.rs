@@ -1,8 +1,10 @@
+use std::collections::HashMap;
+
 use flux_common::{iter::IterExt, result::ResultExt};
 use flux_config::InferOpts;
 use flux_errors::ErrorGuaranteed;
 use flux_infer::{
-    fixpoint_encoding::FixQueryCache,
+    fixpoint_encoding::{FixQueryCache, FixpointCtxt, fixpoint::FixpointTypes},
     infer::{ConstrReason, GlobalEnvExt, Tag},
 };
 use flux_middle::{
@@ -13,16 +15,20 @@ use flux_middle::{
     queries::try_query,
     rty::{self},
 };
+use liquid_fixpoint::Task;
+use rustc_hir::def_id::DefId;
 use rustc_infer::infer::TyCtxtInferExt;
 use rustc_middle::ty::TypingMode;
 use rustc_span::{DUMMY_SP, Span};
 
-pub fn check_invariants(
-    genv: GlobalEnv,
+pub fn check_invariants<'genv, 'tcx>(
+    genv: GlobalEnv<'genv, 'tcx>,
     cache: &mut FixQueryCache,
     def_id: MaybeExternId,
     invariants: &[fhir::Expr],
     adt_def: &rty::AdtDef,
+    def_id_to_cstr: &mut HashMap<DefId, Task<FixpointTypes>>,
+    def_id_to_fixpoint_ctx: &mut HashMap<DefId, FixpointCtxt<'genv, 'tcx, Tag>>,
 ) -> Result<(), ErrorGuaranteed> {
     // FIXME(nilehmann) maybe we should record whether the invariants were generated with overflow
     // checking enabled and only assume them in code that also overflow checking enabled.
@@ -39,18 +45,30 @@ pub fn check_invariants(
         .enumerate()
         .try_for_each_exhaust(|(idx, invariant)| {
             let span = invariants[idx].span;
-            check_invariant(genv, cache, def_id, adt_def, span, invariant, opts)
+            check_invariant(
+                genv,
+                cache,
+                def_id,
+                adt_def,
+                span,
+                invariant,
+                opts,
+                def_id_to_cstr,
+                def_id_to_fixpoint_ctx,
+            )
         })
 }
 
-fn check_invariant(
-    genv: GlobalEnv,
+fn check_invariant<'genv, 'tcx>(
+    genv: GlobalEnv<'genv, 'tcx>,
     cache: &mut FixQueryCache,
     def_id: MaybeExternId,
     adt_def: &rty::AdtDef,
     span: Span,
     invariant: &rty::Invariant,
     opts: InferOpts,
+    def_id_to_cstr: &mut HashMap<DefId, Task<FixpointTypes>>,
+    def_id_to_fixpoint_ctx: &mut HashMap<DefId, FixpointCtxt<'genv, 'tcx, Tag>>,
 ) -> Result<(), ErrorGuaranteed> {
     let resolved_id = def_id.resolved_id();
 
@@ -87,7 +105,13 @@ fn check_invariant(
         rcx.check_pred(&pred, Tag::new(ConstrReason::Other, DUMMY_SP));
     }
     let answer = infcx_root
-        .execute_fixpoint_query(cache, def_id, FixpointQueryKind::Invariant)
+        .execute_fixpoint_query(
+            cache,
+            def_id,
+            FixpointQueryKind::Invariant,
+            def_id_to_cstr,
+            def_id_to_fixpoint_ctx,
+        )
         .emit(&genv)?;
 
     if answer.errors.is_empty() {

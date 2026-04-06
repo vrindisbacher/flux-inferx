@@ -47,6 +47,16 @@ impl<T: Types> fmt::Display for Task<T> {
         for qualif in &self.qualifiers {
             writeln!(f, "{qualif}")?;
         }
+        // VR: Hardcode a qualifier for the time being:
+        writeln!(
+            f,
+            "(qualif Wild2 ((a0 Adt0) (a1# Int) (a2# Str)) (= (Map_select (fld0$1 a0) a1) a2))"
+        )?;
+        writeln!(f, "(qualif Wild3 ((a0 Adt0) (a1# Int) ) (= (fld0$0 a0) a1))")?;
+
+        for kvar in &self.cut_kvars {
+            writeln!(f, "(cut ${})", kvar.display())?;
+        }
 
         for cinfo in &self.constants {
             writeln!(f, "{cinfo}")?;

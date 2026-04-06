@@ -13,7 +13,7 @@ use flux_rustc_bridge::{
     mir::{self},
     ty,
 };
-use flux_syntax::symbols::sym;
+use flux_syntax::{surface::Attr, symbols::sym};
 use itertools::Itertools;
 use rustc_data_structures::unord::{ExtendUnord, UnordMap, UnordSet};
 use rustc_errors::Diagnostic;
@@ -965,7 +965,6 @@ impl<'genv, 'tcx> Queries<'genv, 'tcx> {
         genv: GlobalEnv,
         def_id: DefId,
     ) -> QueryResult<rty::EarlyBinder<rty::PolyFnSig>> {
-        println!("{def_id:?}");
         run_with_cache(&self.fn_sig, def_id, || {
             def_id.dispatch_query(
                 genv,
@@ -975,10 +974,10 @@ impl<'genv, 'tcx> Queries<'genv, 'tcx> {
 
                     let specs = genv.collect_specs();
                     let item_has_specs = item_has_specs(&def_id.resolved_id(), specs);
+                    let is_sink = is_sink(&def_id.resolved_id(), specs);
                     // instantiate kvars if the fn does not have any spec
                     if !item_has_specs {
-                        println!("ADDING KVARS");
-                        let inner = fn_sig.0.add_kvars(genv, def_id.resolved_id())?;
+                        let inner = fn_sig.0.add_kvars(genv, def_id.resolved_id(), is_sink)?;
                         fn_sig = rty::EarlyBinder(inner);
                     }
 
@@ -1015,9 +1014,9 @@ impl<'genv, 'tcx> Queries<'genv, 'tcx> {
 
                     let specs = genv.collect_specs();
                     let item_has_specs = item_has_specs(&def_id, specs);
+                    let is_sink = is_sink(&def_id, specs);
                     if !item_has_specs {
-                        println!("ADDING KVARS");
-                        poly_sig = poly_sig.add_kvars(genv, def_id)?;
+                        poly_sig = poly_sig.add_kvars(genv, def_id, is_sink)?;
                     }
 
                     Ok(rty::EarlyBinder(poly_sig))
@@ -1025,6 +1024,48 @@ impl<'genv, 'tcx> Queries<'genv, 'tcx> {
             )
         })
     }
+}
+
+fn is_sink(def_id: &DefId, specs: &crate::Specs) -> bool {
+    fn contains_sink(attrs: &Vec<Attr>) -> bool {
+        for attr in attrs.iter() {
+            if let Attr::Sink = attr {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    let did = match def_id.as_local() {
+        Some(did) => did,
+        None => {
+            // This means the def_id is for some item in an external crate
+            //
+            // This is definitely more nuanced but for now just return false
+            return false;
+        }
+    };
+
+    let owner_id = rustc_hir::OwnerId { def_id: did };
+    if let Some(item) = specs.get_item(owner_id.clone()) {
+        if contains_sink(&item.attrs) {
+            return true;
+        }
+    }
+
+    if let Some(trait_item) = specs.get_trait_item(owner_id.clone()) {
+        if contains_sink(&trait_item.attrs) {
+            return true;
+        }
+    }
+
+    if let Some(impl_item) = specs.get_impl_item(owner_id) {
+        if contains_sink(&impl_item.attrs) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 fn item_has_specs(def_id: &DefId, specs: &crate::Specs) -> bool {

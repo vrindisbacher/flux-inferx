@@ -15,7 +15,7 @@ impl<'genv, 'tcx, Tag> FixpointCtxt<'genv, 'tcx, Tag>
 where
     Tag: std::hash::Hash + Eq + Copy,
 {
-    pub(crate) fn fixpoint_to_solution(
+    pub fn fixpoint_to_solution(
         &mut self,
         sol: &FixpointSolution,
     ) -> rty::Binder<rty::Expr> {

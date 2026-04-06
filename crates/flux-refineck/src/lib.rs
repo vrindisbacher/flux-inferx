@@ -29,11 +29,13 @@ mod primops;
 mod queue;
 mod type_env;
 
+use std::collections::HashMap;
+
 use checker::{Checker, trait_impl_subtyping};
 use flux_common::{dbg, dbg::SpanTrace, result::ResultExt as _};
 use flux_config as config;
 use flux_infer::{
-    fixpoint_encoding::{FixQueryCache, SolutionTrace},
+    fixpoint_encoding::{FixQueryCache, FixpointCtxt, SolutionTrace, fixpoint::FixpointTypes},
     infer::{ConstrReason, SubtypeReason, Tag},
 };
 use flux_macros::fluent_messages;
@@ -44,9 +46,10 @@ use flux_middle::{
     metrics::{self, Metric, TimingKind},
     rty::{self, ESpan},
 };
+use liquid_fixpoint::Task;
 use rustc_data_structures::unord::UnordMap;
 use rustc_errors::ErrorGuaranteed;
-use rustc_hir::def_id::LocalDefId;
+use rustc_hir::def_id::{DefId, LocalDefId};
 use rustc_span::Span;
 
 use crate::{checker::errors::ResultExt as _, ghost_statements::compute_ghost_statements};
@@ -66,11 +69,13 @@ fn report_fixpoint_errors(
     }
 }
 
-fn check_body(
-    genv: GlobalEnv,
+fn check_body<'genv, 'tcx>(
+    genv: GlobalEnv<'genv, 'tcx>,
     cache: &mut FixQueryCache,
     def_id: LocalDefId,
     poly_sig: &rty::PolyFnSig,
+    def_id_to_cstr: &mut HashMap<DefId, Task<FixpointTypes>>,
+    def_id_to_fixpoint_ctx: &mut HashMap<DefId, FixpointCtxt<'genv, 'tcx, Tag>>,
 ) -> Result<(), ErrorGuaranteed> {
     let span = genv.tcx().def_span(def_id);
     let opts = genv.infer_opts(def_id);
@@ -106,7 +111,13 @@ fn check_body(
             .emit(&genv)
     } else {
         let answer = infcx_root
-            .execute_fixpoint_query(cache, MaybeExternId::Local(def_id), FixpointQueryKind::Body)
+            .execute_fixpoint_query(
+                cache,
+                MaybeExternId::Local(def_id),
+                FixpointQueryKind::Body,
+                def_id_to_cstr,
+                def_id_to_fixpoint_ctx,
+            )
             .emit(&genv)?;
 
         let tcx = genv.tcx();
@@ -119,11 +130,13 @@ fn check_body(
     }
 }
 
-pub fn check_static(
-    genv: GlobalEnv,
+pub fn check_static<'genv, 'tcx>(
+    genv: GlobalEnv<'genv, 'tcx>,
     cache: &mut FixQueryCache,
     def_id: LocalDefId,
     ty: rty::Ty,
+    def_id_to_cstr: &mut HashMap<DefId, Task<FixpointTypes>>,
+    def_id_to_fixpoint_ctx: &mut HashMap<DefId, FixpointCtxt<'genv, 'tcx, Tag>>,
 ) -> Result<(), ErrorGuaranteed> {
     // Build a PolyFnSig with no inputs and `ty` as the output
     let output = rty::Binder::dummy(rty::FnOutput::new(ty, vec![]));
@@ -139,13 +152,17 @@ pub fn check_static(
     let poly_sig = rty::PolyFnSig::dummy(fn_sig);
 
     metrics::incr_metric(Metric::FnChecked, 1);
-    metrics::time_it(TimingKind::CheckBody(def_id), || check_body(genv, cache, def_id, &poly_sig))
+    metrics::time_it(TimingKind::CheckBody(def_id), || {
+        check_body(genv, cache, def_id, &poly_sig, def_id_to_cstr, def_id_to_fixpoint_ctx)
+    })
 }
 
-pub fn check_fn(
-    genv: GlobalEnv,
+pub fn check_fn<'genv, 'tcx>(
+    genv: GlobalEnv<'genv, 'tcx>,
     cache: &mut FixQueryCache,
     def_id: LocalDefId,
+    def_id_to_cstr: &mut HashMap<DefId, Task<FixpointTypes>>,
+    def_id_to_fixpoint_ctx: &mut HashMap<DefId, FixpointCtxt<'genv, 'tcx, Tag>>,
 ) -> Result<(), ErrorGuaranteed> {
     let span = genv.tcx().def_span(def_id);
 
@@ -167,7 +184,13 @@ pub fn check_fn(
     {
         tracing::info!("check_fn::refine-subtyping");
         let answer = infcx_root
-            .execute_fixpoint_query(cache, MaybeExternId::Local(def_id), FixpointQueryKind::Impl)
+            .execute_fixpoint_query(
+                cache,
+                MaybeExternId::Local(def_id),
+                FixpointQueryKind::Impl,
+                def_id_to_cstr,
+                def_id_to_fixpoint_ctx,
+            )
             .emit(&genv)?;
         tracing::info!("check_fn::fixpoint-subtyping");
         let errors = answer.errors;
@@ -189,7 +212,7 @@ pub fn check_fn(
             .instantiate_identity();
         let poly_sig = rty::auto_strong(genv, def_id, poly_sig);
 
-        check_body(genv, cache, def_id, &poly_sig)
+        check_body(genv, cache, def_id, &poly_sig, def_id_to_cstr, def_id_to_fixpoint_ctx)
     })?;
 
     dbg::check_fn_span!(genv.tcx(), def_id).in_scope(|| Ok(()))
@@ -228,12 +251,12 @@ fn report_errors(genv: GlobalEnv, errors: Vec<Tag>) -> Result<(), ErrorGuarantee
             ConstrReason::Overflow => genv.sess().emit_err(errors::OverflowError { span }),
             ConstrReason::Underflow => genv.sess().emit_err(errors::UnderflowError { span }),
             ConstrReason::Other => genv.sess().emit_err(errors::UnknownError { span }),
-            ConstrReason::NoPanic(callee) => {
-                genv.sess().emit_err(errors::PanicError {
-                    span,
-                    callee: genv.tcx().def_path_debug_str(callee),
-                })
-            }
+            // ConstrReason::NoPanic(callee) => {
+            //     genv.sess().emit_err(errors::PanicError {
+            //         span,
+            //         callee: genv.tcx().def_path_debug_str(callee),
+            //     })
+            // }
         });
     }
 

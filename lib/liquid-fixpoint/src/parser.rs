@@ -164,7 +164,12 @@ where
                         "not" => self.parse_not(sexp),
                         "or" => self.parse_or(sexp),
                         "and" => self.parse_and(sexp),
-                        "lit" => parse_bitvec(sexp),
+                        "lit" => {
+                            match parse_bitvec(sexp) {
+                                Ok(r) => Ok(r),
+                                Err(_) => parse_lit_str(sexp, &self.parser),
+                            }
+                        }
                         "-" if items.len() == 2 => self.parse_neg(sexp),
                         "+" | "-" | "*" | "/" | "mod" => self.parse_binary_op(sexp),
                         "=" | "!=" | "<" | "<=" | ">" | ">=" => self.parse_atom(sexp),
@@ -610,6 +615,24 @@ fn parse_bitvec<PT: Types>(sexp: &Sexp) -> Result<Expr<PT>, ParseError> {
     }
 }
 
+fn parse_lit_str<T: Types, Parser: FromSexp<T>>(
+    sexp: &Sexp,
+    parser: &Parser,
+) -> Result<Expr<T>, ParseError> {
+    match sexp {
+        Sexp::List(items) => {
+            match &items[1] {
+                Sexp::Atom(Atom::Q(lit)) => {
+                    let string_val = parser.string(lit)?;
+                    Ok(Expr::Constant(Constant::String(string_val)))
+                }
+                _ => Err(ParseError::err("Expected atom")),
+            }
+        }
+        _ => Err(ParseError::err("Expected list for string literal")),
+    }
+}
+
 fn parse_thy_func(name: &str) -> Option<ThyFunc> {
     match name {
         // STRINGS
@@ -661,8 +684,10 @@ fn parse_thy_func(name: &str) -> Option<ThyFunc> {
 
         // MAPS
         "Map_default" => Some(ThyFunc::MapDefault),
-        "Map_select" | "arr_select_m" => Some(ThyFunc::MapSelect),
-        "Map_store" | "arr_store_m" => Some(ThyFunc::MapStore),
+        "Map_select" | "arr_select_m" | "arr_select_s" => Some(ThyFunc::MapSelect),
+        "Map_store" | "arr_store_m" | "arr_store_s" => Some(ThyFunc::MapStore),
+        "arr_const_s" | "arr_const_m" => Some(ThyFunc::MapConst),
+        "arr_map_or" => Some(ThyFunc::SetCup),
 
         // Note: BvZeroExtend and BvSignExtend have parametric forms like "app (_ zero_extend N)"
         // These would need special parsing in the caller

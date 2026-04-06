@@ -14,6 +14,7 @@ extern crate rustc_span;
 
 pub mod callbacks;
 mod collector;
+mod interpreter;
 
 use flux_macros::fluent_messages;
 

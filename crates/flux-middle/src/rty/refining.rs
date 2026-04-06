@@ -505,7 +505,7 @@ pub fn refine_bound_variables(vars: &[ty::BoundVariableKind]) -> List<rty::Bound
 }
 
 impl rty::PolyFnSig {
-    pub fn add_kvars(self, genv: GlobalEnv, def_id: DefId) -> QueryResult<Self> {
+    pub fn add_kvars(self, genv: GlobalEnv, def_id: DefId, is_sink: bool) -> QueryResult<Self> {
         let late_vars = make_vars_and_sorts_from_bound_vars(self.vars());
         let refinement_generics = genv.refinement_generics_of(def_id)?;
         let early_param_sorts: FxHashMap<Symbol, rty::Sort> = refinement_generics
@@ -544,6 +544,10 @@ impl rty::PolyFnSig {
                 Vec::new(),
                 params.clone(),
             );
+            // save the sink kvar
+            if is_sink {
+                genv.set_sink_kvar(requires_kvar.clone());
+            }
             let inputs: flux_arc_interner::Interned<[rty::Ty]> = fn_sig
                 .inputs
                 .iter()

@@ -28,7 +28,7 @@ use crate::{
     queries::{DispatchKey, Providers, Queries, QueryErr, QueryResult},
     query_bug,
     rty::{
-        self, QualifierKind,
+        self, KVar, QualifierKind,
         refining::{Refine as _, Refiner},
     },
 };
@@ -56,6 +56,7 @@ struct GlobalEnvInner<'genv, 'tcx> {
     tempdir: TempDir,
     kvars: RefCell<KvarMap>,
     kvid: RefCell<rty::KVid>,
+    sink_kvar: RefCell<Option<KVar>>,
 }
 
 impl<'tcx> GlobalEnv<'_, 'tcx> {
@@ -73,7 +74,9 @@ impl<'tcx> GlobalEnv<'_, 'tcx> {
         let queries = Queries::new(providers);
         let kvars = Default::default();
         let kvid = RefCell::new(rty::KVid::from(0_usize));
-        let inner = GlobalEnvInner { tcx, sess, cstore, arena, queries, tempdir, kvars, kvid };
+        let sink_kvar = RefCell::new(None);
+        let inner =
+            GlobalEnvInner { tcx, sess, cstore, arena, queries, tempdir, kvars, kvid, sink_kvar };
         f(GlobalEnv { inner: &inner })
     }
 }
@@ -155,6 +158,15 @@ impl<'genv, 'tcx> GlobalEnv<'genv, 'tcx> {
 
     pub fn def_kind(&self, def_id: impl IntoQueryParam<DefId>) -> DefKind {
         self.tcx().def_kind(def_id.into_query_param())
+    }
+
+    pub fn set_sink_kvar(&self, kvar: KVar) {
+        let mut sink_kvar = self.inner.sink_kvar.borrow_mut();
+        *sink_kvar = Some(kvar);
+    }
+
+    pub fn get_sink_kvar(&self) -> Option<KVar> {
+        self.inner.sink_kvar.borrow().as_ref().cloned()
     }
 
     pub fn feed_kvars(&self, kv: KvarMap) {
