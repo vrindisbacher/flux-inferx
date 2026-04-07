@@ -312,11 +312,18 @@ impl<'genv, 'tcx> InferCtxtRoot<'genv, 'tcx> {
 
         let did = def_id.resolved_id();
 
-        let result = fcx.run_task(cache, def_id, kind, &task)?;
-        let res = fcx.result_to_answer(result);
+        // VR: HACK for now - never actually run any of this - just save the fixpoint context
+        // let res = if task.should_execute {
+        //     let result = fcx.run_task(cache, def_id, kind, &task)?;
+        //     fcx.result_to_answer(result)
+        // } else {
+        //  Answer::trivial()
+        // };
+
         def_id_to_cstr.insert(did, task.clone());
         def_id_to_fixpoint_cstr.insert(did, fcx);
-        Ok(res)
+
+        Ok(Answer::trivial())
     }
 
     pub fn split(self) -> (RefineTree, KVarGen) {

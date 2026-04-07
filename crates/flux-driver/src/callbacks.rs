@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::{HashMap, HashSet},
     path::Path,
 };
 
@@ -7,7 +7,10 @@ use flux_common::{cache::QueryCache, iter::IterExt, result::ResultExt, tracked_s
 use flux_config::{self as config};
 use flux_errors::FluxSession;
 use flux_infer::{
-    fixpoint_encoding::{FixQueryCache, FixpointCtxt, FixpointSolution, fixpoint, fixpoint::Task},
+    fixpoint_encoding::{
+        FixQueryCache, FixpointCtxt, KVarDecl, KVarEncoding,
+        fixpoint::{self, Task},
+    },
     infer::Tag,
     lean_encoding,
 };
@@ -34,11 +37,7 @@ use rustc_middle::{query, ty::TyCtxt};
 use rustc_session::config::OutputType;
 use rustc_span::FileName;
 
-use crate::{
-    DEFAULT_LOCALE_RESOURCES,
-    collector::SpecCollector,
-    interpreter::{Env, Interpreter, Simplifier},
-};
+use crate::{DEFAULT_LOCALE_RESOURCES, collector::SpecCollector};
 
 #[derive(Default)]
 pub struct FluxCallbacks;
@@ -150,7 +149,20 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                     acc
                 });
 
-        let result = def_ids_to_check
+        // get all transitive callees of the functions in the paths
+        let all_def_ids: Vec<DefId> = def_ids_to_check.iter().map(|l| l.to_def_id()).collect();
+        let additional_callees = source_call_graph.transitive_callees(&all_def_ids);
+
+        let all_to_check: HashSet<LocalDefId> = def_ids_to_check
+            .into_iter()
+            .chain(
+                additional_callees
+                    .into_iter()
+                    .filter_map(|def_id| def_id.as_local()),
+            )
+            .collect();
+
+        let result = all_to_check
             .into_iter()
             .try_for_each_exhaust(|def_id| ck.check_def_catching_bugs(def_id));
 
@@ -160,15 +172,6 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
             for task in tasks {
                 mega_task.merge(task);
             }
-
-            // add cut kvar for sink to constraint
-            if let Some(cut_kvar) = genv.get_sink_kvar() {
-                mega_task.add_cut_kvar(flux_infer::fixpoint_encoding::fixpoint::KVid::from_u32(
-                    cut_kvar.kvid.as_u32(),
-                ));
-            }
-
-            println!("{}", mega_task);
 
             let verification_result = mega_task
                 .run()
@@ -183,16 +186,148 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                 let kvar_solutions =
                     base_fcx.parse_kvar_solutions(&verification_result.non_cuts_solution);
 
-                for (kvar_id, sol) in kvar_solutions.iter() {
-                    let res = base_fcx.fixpoint_to_solution(sol);
-                    println!("{kvar_id:?}: {res:?}");
-                }
+                if let Some(sink_kvar) = genv.get_sink_kvar() {
+                    for (kvar_id, sol) in kvar_solutions.iter() {
+                        if *kvar_id
+                            != flux_infer::fixpoint_encoding::fixpoint::KVid::from_u32(
+                                sink_kvar.kvid.as_u32(),
+                            )
+                        {
+                            continue;
+                        }
+                        let res = base_fcx.fixpoint_to_solution(sol);
+                        let kvar_sort = res.vars()[0].expect_sort().clone();
+                        let disjuncts = res.skip_binder_ref().to_dnf();
 
-                println!("{:?}", verification_result.solution);
-                let cut_sols = base_fcx.parse_kvar_solutions(&verification_result.solution);
-                for (kvar_id, sol) in cut_sols.iter() {
-                    let res = base_fcx.fixpoint_to_solution(sol);
-                    println!("{kvar_id:?}: {res:?}");
+                        let mut fresh_kvids = Vec::new();
+                        for _ in disjuncts.iter() {
+                            fresh_kvids.push(genv.get_next_kvid());
+                        }
+
+                        let mut constraints = Vec::new();
+
+                        for (disjunct, fresh_kvid) in disjuncts.iter().zip(fresh_kvids.iter()) {
+                            // Push a layer for the bound variable (the builder arg from the kvar binder)
+                            base_fcx.ecx.local_var_env.push_layer_with_fresh_names(1);
+
+                            // Encode the disjunct
+                            let guard = base_fcx
+                                .ecx
+                                .expr_to_fixpoint(&disjunct, &mut base_fcx.scx)
+                                .expect("Could not encode disjunct");
+
+                            // Pop the layer
+                            let vars = base_fcx.ecx.local_var_env.pop_layer();
+
+                            let sort = base_fcx.scx.sort_to_fixpoint(&kvar_sort);
+
+                            let bind = fixpoint::Bind {
+                                name: fixpoint::Var::Local(vars[0]),
+                                sort,
+                                pred: fixpoint::Pred::Expr(guard),
+                            };
+                            let head = fixpoint::Constraint::Pred(
+                                fixpoint::Pred::KVar(
+                                    flux_infer::fixpoint_encoding::fixpoint::KVid::from_u32(
+                                        fresh_kvid.as_u32(),
+                                    ),
+                                    vec![fixpoint::Expr::Var(fixpoint::Var::Local(vars[0]))],
+                                ),
+                                None,
+                            );
+                            constraints.push(fixpoint::Constraint::ForAll(bind, Box::new(head)));
+                        }
+
+                        // insert kvars
+                        for fresh_kvid in &fresh_kvids {
+                            base_fcx.kvars.add(
+                                *fresh_kvid,
+                                KVarDecl {
+                                    self_args: 1,
+                                    sorts: vec![kvar_sort.clone()],
+                                    encoding: KVarEncoding::Single,
+                                },
+                            );
+
+                            let fixpoint_kvid = fixpoint::KVid::from_u32(fresh_kvid.as_u32());
+                            base_fcx
+                                .kcx
+                                .ranges
+                                .insert(*fresh_kvid, fixpoint_kvid..fixpoint_kvid + 1);
+                        }
+
+                        // insert trivial constraints
+                        for (_, fresh_kvid) in fresh_kvids.iter().enumerate() {
+                            let local = base_fcx.ecx.local_var_env.fresh_name();
+                            let sort = base_fcx.scx.sort_to_fixpoint(&kvar_sort);
+                            let fixpoint_kvid = fixpoint::KVid::from_u32(fresh_kvid.as_u32());
+
+                            let trivial_check = fixpoint::Constraint::Pred(
+                                fixpoint::Pred::Expr(fixpoint::Expr::Atom(
+                                    fixpoint::BinRel::Lt,
+                                    Box::new([fixpoint::Expr::int(10), fixpoint::Expr::int(11)]),
+                                )),
+                                None,
+                            );
+
+                            let kvar_bind = fixpoint::Bind {
+                                name: fixpoint::Var::Underscore,
+                                sort: fixpoint::Sort::Int,
+                                pred: fixpoint::Pred::KVar(
+                                    fixpoint_kvid,
+                                    vec![fixpoint::Expr::Var(fixpoint::Var::Local(local))],
+                                ),
+                            };
+
+                            let outer_bind = fixpoint::Bind {
+                                name: fixpoint::Var::Local(local),
+                                sort,
+                                pred: fixpoint::Pred::TRUE,
+                            };
+
+                            let consumer = fixpoint::Constraint::ForAll(
+                                outer_bind,
+                                Box::new(fixpoint::Constraint::ForAll(
+                                    kvar_bind,
+                                    Box::new(trivial_check),
+                                )),
+                            );
+
+                            constraints.push(consumer);
+                        }
+
+                        let combined = fixpoint::Constraint::Conj(constraints);
+
+                        use rustc_hir::def_id::CRATE_DEF_ID;
+
+                        let dummy_def_id = MaybeExternId::Local(CRATE_DEF_ID);
+                        let mut task = base_fcx
+                            .create_task(
+                                dummy_def_id,
+                                combined,
+                                false,
+                                liquid_fixpoint::SmtSolver::Z3,
+                            )
+                            .expect("Failed to create task");
+
+                        for fresh_kvid in &fresh_kvids {
+                            let fixpoint_kvid = fixpoint::KVid::from_u32(fresh_kvid.as_u32());
+                            task.add_cut_kvar(fixpoint_kvid);
+                        }
+
+                        println!("{task}");
+
+                        let verification_result = task.run().unwrap_or_else(|err| {
+                            tracked_span_bug!("failed to run fixpoint: {err}")
+                        });
+
+                        let cut_kvar_solutions =
+                            base_fcx.parse_kvar_solutions(&verification_result.solution);
+                        for (kvar_id, sol) in cut_kvar_solutions.iter() {
+                            let res = base_fcx.fixpoint_to_solution(sol);
+                            println!("{kvar_id:?}: {res:?}");
+                        }
+                    }
                 }
             }
         }

@@ -597,9 +597,19 @@ where
         }
         self.kcx.merge(other.kcx);
         self.ecx.const_env.merge(other.ecx.const_env);
+        // merge sort encoding context
+        for did in other.scx.adt_sorts {
+            self.scx.declare_adt(did);
+        }
+        for did in other.scx.opaque_sorts {
+            self.scx.declare_opaque_sort(did);
+        }
+        for arity in other.scx.tuples.items().into_sorted_stable_ord() {
+            self.scx.declare_tuple(*arity);
+        }
     }
 
-    pub(crate) fn create_task(
+    pub fn create_task(
         &mut self,
         def_id: MaybeExternId,
         constraint: fixpoint::Constraint,
@@ -949,7 +959,7 @@ where
     /// implications and foralls.
     ///
     /// [`fixpoint::Constraint`]: liquid_fixpoint::Constraint
-    pub(crate) fn head_to_fixpoint(
+    pub fn head_to_fixpoint(
         &mut self,
         expr: &rty::Expr,
         mk_tag: impl Fn(Option<ESpan>) -> Tag + Copy,
@@ -1114,7 +1124,7 @@ fn const_to_fixpoint(cst: rty::Constant) -> fixpoint::Expr {
 pub struct KVarEncodingCtxt {
     /// A map from a [`rty::KVid`] to the range of [`fixpoint::KVid`]s that will be used to
     /// encode it.
-    ranges: FxIndexMap<rty::KVid, Range<fixpoint::KVid>>,
+    pub ranges: FxIndexMap<rty::KVid, Range<fixpoint::KVid>>,
 }
 
 impl KVarEncodingCtxt {
@@ -1230,11 +1240,11 @@ impl KVarEncodingCtxt {
 }
 
 /// Environment used to map from [`rty::Var`] to a [`fixpoint::LocalVar`].
-struct LocalVarEnv {
+pub struct LocalVarEnv {
     local_var_gen: IndexGen<fixpoint::LocalVar>,
     fvars: UnordMap<rty::Name, fixpoint::LocalVar>,
     /// Layers of late bound variables
-    layers: Vec<Vec<fixpoint::LocalVar>>,
+    pub layers: Vec<Vec<fixpoint::LocalVar>>,
     /// While it might seem like the signature should be
     /// [`UnordMap<fixpoint::LocalVar, rty::Var>`], we encode the arguments to
     /// kvars (which can be arbitrary expressions) as local variables; thus we
@@ -1256,7 +1266,7 @@ impl LocalVarEnv {
 
     // This doesn't require to be mutable because `IndexGen` uses atomics, but we make it mutable
     // to better declare the intent.
-    fn fresh_name(&mut self) -> fixpoint::LocalVar {
+    pub fn fresh_name(&mut self) -> fixpoint::LocalVar {
         self.local_var_gen.fresh()
     }
 
@@ -1278,7 +1288,7 @@ impl LocalVarEnv {
     }
 
     /// Push a layer of bound variables assigning a fresh [`fixpoint::LocalVar`] to each one
-    fn push_layer_with_fresh_names(&mut self, count: usize) {
+    pub fn push_layer_with_fresh_names(&mut self, count: usize) {
         let layer = (0..count).map(|_| self.fresh_name()).collect();
         self.layers.push(layer);
         // FIXME: (ck) what to put in reverse_map here?
@@ -1288,7 +1298,7 @@ impl LocalVarEnv {
         self.layers.push(layer);
     }
 
-    fn pop_layer(&mut self) -> Vec<fixpoint::LocalVar> {
+    pub fn pop_layer(&mut self) -> Vec<fixpoint::LocalVar> {
         self.layers.pop().unwrap()
     }
 
@@ -1428,9 +1438,9 @@ impl KVarGen {
 
 #[derive(Clone)]
 pub struct KVarDecl {
-    self_args: usize,
-    sorts: Vec<rty::Sort>,
-    encoding: KVarEncoding,
+    pub self_args: usize,
+    pub sorts: Vec<rty::Sort>,
+    pub encoding: KVarEncoding,
 }
 
 /// How an [`rty::KVar`] is encoded in the fixpoint constraint
@@ -1493,7 +1503,7 @@ impl<'tcx> ConstEnv<'tcx> {
 
 pub struct ExprEncodingCtxt<'genv, 'tcx> {
     genv: GlobalEnv<'genv, 'tcx>,
-    local_var_env: LocalVarEnv,
+    pub local_var_env: LocalVarEnv,
     const_env: ConstEnv<'tcx>,
     errors: Errors<'genv>,
     /// Id of the item being checked. This is a [`MaybeExternId`] because we may be encoding
@@ -1720,7 +1730,7 @@ impl<'genv, 'tcx> ExprEncodingCtxt<'genv, 'tcx> {
         }
     }
 
-    fn expr_to_fixpoint(
+    pub fn expr_to_fixpoint(
         &mut self,
         expr: &rty::Expr,
         scx: &mut SortEncodingCtxt,

@@ -47,12 +47,15 @@ impl<T: Types> fmt::Display for Task<T> {
         for qualif in &self.qualifiers {
             writeln!(f, "{qualif}")?;
         }
+
         // VR: Hardcode a qualifier for the time being:
-        writeln!(
-            f,
-            "(qualif Wild2 ((a0 Adt0) (a1# Int) (a2# Str)) (= (Map_select (fld0$1 a0) a1) a2))"
-        )?;
-        writeln!(f, "(qualif Wild3 ((a0 Adt0) (a1# Int) ) (= (fld0$0 a0) a1))")?;
+        if self.cut_kvars.len() > 0 {
+            writeln!(
+                f,
+                "(qualif Wild2 ((a0 Adt0) (a1# Int) (a2# Str)) (= (Map_select (fld0$1 a0) a1) a2))"
+            )?;
+            writeln!(f, "(qualif Wild3 ((a0 Adt0) (a1# Int) ) (= (fld0$0 a0) a1))")?;
+        }
 
         for kvar in &self.cut_kvars {
             writeln!(f, "(cut ${})", kvar.display())?;
@@ -338,11 +341,26 @@ impl<T: Types> fmt::Display for Expr<T> {
             Expr::IsCtor(ctor, e) => {
                 write!(f, "(is${} {})", ctor.display(), e)
             }
+            // Expr::Exists(sorts, body) => {
+            //     write!(
+            //         f,
+            //         "(exists ({}) {})",
+            //         sorts.iter().map(|binder| &binder.1).format(" "),
+            //         body
+            //     )
+            // }
             Expr::Exists(sorts, body) => {
                 write!(
                     f,
                     "(exists ({}) {})",
-                    sorts.iter().map(|binder| &binder.1).format(" "),
+                    sorts
+                        .iter()
+                        .map(|(var, sort)| {
+                            let mut s = String::new();
+                            write!(s, "({} {})", var.display(), sort).unwrap();
+                            s
+                        })
+                        .format(" "),
                     body
                 )
             }

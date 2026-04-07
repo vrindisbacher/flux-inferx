@@ -5,7 +5,7 @@ extern crate rustc_middle;
 extern crate rustc_trait_selection;
 
 use flux_rustc_bridge::lowering::resolve_call_query;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use rustc_hir::{def::DefKind, def_id::DefId};
 use rustc_infer::infer::TyCtxtInferExt;
 use rustc_middle::{
@@ -45,6 +45,29 @@ impl CallGraph {
                 }
             }
         });
+    }
+
+    /// Gets all transitive callees from a set of roots
+    pub fn transitive_callees(&self, roots: &[DefId]) -> Vec<DefId> {
+        let mut result = Vec::new();
+        let mut seen = FxHashSet::default();
+        let mut worklist: Vec<DefId> = roots.to_vec();
+
+        while let Some(def_id) = worklist.pop() {
+            if !seen.insert(def_id) {
+                continue;
+            }
+            result.push(def_id);
+            if let Some(callees) = self.get(&def_id) {
+                for &callee in callees {
+                    if !seen.contains(&callee) {
+                        worklist.push(callee);
+                    }
+                }
+            }
+        }
+
+        result
     }
 
     /// Gets all of the paths upwards from the start through callers to a top level fn
