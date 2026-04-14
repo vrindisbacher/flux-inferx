@@ -1063,7 +1063,10 @@ where
         kvar: &rty::KVar,
         bindings: &mut Vec<fixpoint::Bind>,
     ) -> QueryResult<fixpoint::Pred> {
-        let decl = self.kvars.get(&kvar.kvid).expect("Unknown KVar");
+        let decl = self.kvars.get(&kvar.kvid).unwrap_or_else(|| {
+            panic!("Unknown KVar: rty kvid={:?}, fixpoint range would start at...", kvar.kvid);
+        });
+        // let decl = self.kvars.get(&kvar.kvid).expect("Unknown KVar");
         let kvids = self
             .kcx
             .declare(self.genv, kvar.kvid, decl, &self.ecx.backend);
@@ -2570,6 +2573,26 @@ fn parse_data_ctor(name: &str) -> Option<fixpoint::Var> {
     None
 }
 
+fn parse_tuple_ctor(name: &str) -> Option<fixpoint::Var> {
+    if let Some(rest) = name.strip_prefix("mktuple")
+        && let Ok(arity) = rest.parse::<usize>()
+    {
+        return Some(fixpoint::Var::TupleCtor { arity });
+    }
+    None
+}
+
+fn parse_tuple_proj(name: &str) -> Option<fixpoint::Var> {
+    if let Some(rest) = name.strip_prefix("tuple")
+        && let Some((arity_str, field_str)) = rest.split_once('$')
+        && let Ok(arity) = arity_str.parse::<usize>()
+        && let Ok(field) = field_str.parse::<u32>()
+    {
+        return Some(fixpoint::Var::TupleProj { arity, field });
+    }
+    None
+}
+
 struct SexpParseCtxt<'a> {
     local_var_env: &'a mut LocalVarEnv,
     fun_decl_map: &'a HashMap<usize, FluxDefId>,
@@ -2613,6 +2636,12 @@ impl FromSexp<FixpointTypes> for SexpParseCtxt<'_> {
             return Ok(var);
         }
         if let Some(var) = parse_data_ctor(name) {
+            return Ok(var);
+        }
+        if let Some(var) = parse_tuple_ctor(name) {
+            return Ok(var);
+        }
+        if let Some(var) = parse_tuple_proj(name) {
             return Ok(var);
         }
         Err(ParseError::err(format!("Unknown variable: {name}")))

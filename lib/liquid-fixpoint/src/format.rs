@@ -52,9 +52,9 @@ impl<T: Types> fmt::Display for Task<T> {
         if self.cut_kvars.len() > 0 {
             writeln!(
                 f,
-                "(qualif Wild2 ((a0 Adt0) (a1# Int) (a2# Str)) (= (Map_select (fld0$1 a0) a1) a2))"
+                "(qualif Wild2 ((a0 Adt0) (a1# Str) (a2# Str)) (= (Map_select (fld0$1 a0) a1) a2))"
             )?;
-            writeln!(f, "(qualif Wild3 ((a0 Adt0) (a1# Int) ) (= (fld0$0 a0) a1))")?;
+            writeln!(f, "(qualif Wild3 ((a0 Adt0) (a1# Str) ) (= (fld0$0 a0) a1))")?;
         }
 
         for kvar in &self.cut_kvars {

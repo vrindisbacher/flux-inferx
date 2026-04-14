@@ -26,6 +26,7 @@ use flux_middle::{
 };
 use flux_refineck as refineck;
 use rustc_borrowck::consumers::ConsumerOptions;
+use rustc_data_structures::snapshot_map::SnapshotMap;
 use rustc_driver::{Callbacks, Compilation};
 use rustc_errors::ErrorGuaranteed;
 use rustc_hir::{
@@ -115,27 +116,40 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
             }
         }
 
-        let (sources, sinks) = genv.tcx().iter_local_def_id().fold(
+        let (sources, mut sinks) = genv.tcx().iter_local_def_id().fold(
             (Vec::new(), Vec::new()),
             |(mut sources, mut sinks), local_def_id| {
                 if genv.tcx().def_kind(local_def_id).is_fn_like() {
                     if genv.is_source(local_def_id) {
-                        sources.push(local_def_id);
+                        sources.push(local_def_id.to_def_id());
                     }
                     if genv.is_sink(local_def_id) {
-                        sinks.push(local_def_id);
+                        sinks.push(local_def_id.to_def_id());
                     }
                 }
                 (sources, sinks)
             },
         );
 
+        // check non-locals in call graph for sinks
+        for (_def_id, callees) in &source_call_graph.inner {
+            for callee in callees {
+                if genv.is_sink(callee) {
+                    sinks.push(*callee);
+                }
+            }
+        }
+
         let mut paths_to_check = Vec::new();
+
         for source in sources.iter() {
             for sink in sinks.iter() {
-                let path =
-                    source_call_graph.get_all_paths_from_to(source.to_def_id(), sink.to_def_id());
-                paths_to_check.extend(path);
+                // resolve the (possibly) extern spec'd sink to the actual fn that is called
+                // let resolved_sink = genv.maybe_extern_id(sink).as_extern().unwrap_or(sink);
+
+                let paths = source_call_graph.get_all_paths_from_to(*source, *sink);
+
+                paths_to_check.extend(paths);
             }
         }
 
@@ -144,8 +158,12 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                 .iter()
                 .flatten()
                 .fold(HashSet::new(), |mut acc, def_id| {
-                    let local = def_id.as_local().unwrap();
-                    acc.insert(local);
+                    match def_id.as_local() {
+                        Some(local) => {
+                            acc.insert(local);
+                        }
+                        None => {}
+                    }
                     acc
                 });
 
@@ -162,31 +180,80 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
             )
             .collect();
 
+        for local_def_id in genv.tcx().iter_local_def_id() {
+            if !all_to_check.contains(&local_def_id) {
+                let def_id = genv.maybe_extern_id(local_def_id);
+                let _ = trigger_queries(genv, def_id);
+            }
+        }
+
         let result = all_to_check
             .into_iter()
             .try_for_each_exhaust(|def_id| ck.check_def_catching_bugs(def_id));
 
         let mut tasks = ck.def_id_to_cstr_map.drain().map(|(_, t)| t);
 
-        if let Some(mut mega_task) = tasks.next() {
-            for task in tasks {
-                mega_task.merge(task);
-            }
-
-            let verification_result = mega_task
-                .run()
-                .unwrap_or_else(|err| tracked_span_bug!("failed to run fixpoint: {err}"));
-
-            let mut ctxs = ck.def_id_to_fixpoint_ctx.drain().map(|(_, c)| c);
-            if let Some(mut base_fcx) = ctxs.next() {
-                for ctx in ctxs {
-                    base_fcx.merge(ctx);
+        if let Some(sink_kvar) = genv.get_sink_kvar() {
+            if let Some(mut mega_task) = tasks.next() {
+                for task in tasks {
+                    mega_task.merge(task);
                 }
 
-                let kvar_solutions =
-                    base_fcx.parse_kvar_solutions(&verification_result.non_cuts_solution);
+                // generate a dummy constraint for the sink kvar
+                // Add sink kvar consumer directly to the mega task
+                let fixpoint_kvid = fixpoint::KVid::from_u32(sink_kvar.kvid.as_u32());
 
-                if let Some(sink_kvar) = genv.get_sink_kvar() {
+                // We need a local var name that doesn't clash — use a high number
+                let local = fixpoint::LocalVar::from_u32(9999);
+
+                let sort = mega_task
+                    .kvars
+                    .iter()
+                    .find(|k| k.kvid == fixpoint_kvid)
+                    .map(|k| k.sorts[0].clone())
+                    .unwrap_or(fixpoint::Sort::Int);
+
+                let bind = fixpoint::Bind {
+                    name: fixpoint::Var::Local(local),
+                    sort,
+                    pred: fixpoint::Pred::KVar(
+                        fixpoint_kvid,
+                        vec![fixpoint::Expr::Var(fixpoint::Var::Local(local))],
+                    ),
+                };
+
+                let trivial = fixpoint::Constraint::Pred(
+                    fixpoint::Pred::Expr(fixpoint::Expr::Atom(
+                        fixpoint::BinRel::Lt,
+                        Box::new([fixpoint::Expr::int(10), fixpoint::Expr::int(11)]),
+                    )),
+                    None,
+                );
+
+                let consumer = fixpoint::Constraint::ForAll(bind, Box::new(trivial));
+
+                // Wrap existing constraint with the new consumer
+                let existing =
+                    std::mem::replace(&mut mega_task.constraint, fixpoint::Constraint::TRUE);
+                mega_task.constraint = fixpoint::Constraint::Conj(vec![existing, consumer]);
+
+                println!("{mega_task:?}");
+
+                let verification_result = mega_task
+                    .run()
+                    .unwrap_or_else(|err| tracked_span_bug!("failed to run fixpoint: {err}"));
+
+                let mut ctxs = ck.def_id_to_fixpoint_ctx.drain().map(|(_, c)| c);
+                if let Some(mut base_fcx) = ctxs.next() {
+                    for ctx in ctxs {
+                        base_fcx.merge(ctx);
+                    }
+
+                    let kvar_solutions =
+                        base_fcx.parse_kvar_solutions(&verification_result.non_cuts_solution);
+
+                    println!("{kvar_solutions:?}");
+
                     for (kvar_id, sol) in kvar_solutions.iter() {
                         if *kvar_id
                             != flux_infer::fixpoint_encoding::fixpoint::KVid::from_u32(
@@ -199,12 +266,19 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                         let kvar_sort = res.vars()[0].expect_sort().clone();
                         let disjuncts = res.skip_binder_ref().to_dnf();
 
+                        let mut constraints = Vec::new();
+
+                        // don't add trivially false disjuncts
+                        let disjuncts: Vec<_> = disjuncts
+                            .into_iter()
+                            .map(|d| d.simplify(&SnapshotMap::default()))
+                            .filter(|d| !d.is_trivially_false())
+                            .collect();
+
                         let mut fresh_kvids = Vec::new();
                         for _ in disjuncts.iter() {
                             fresh_kvids.push(genv.get_next_kvid());
                         }
-
-                        let mut constraints = Vec::new();
 
                         for (disjunct, fresh_kvid) in disjuncts.iter().zip(fresh_kvids.iter()) {
                             // Push a layer for the bound variable (the builder arg from the kvar binder)
@@ -272,7 +346,7 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
 
                             let kvar_bind = fixpoint::Bind {
                                 name: fixpoint::Var::Underscore,
-                                sort: fixpoint::Sort::Int,
+                                sort: sort.clone(),
                                 pred: fixpoint::Pred::KVar(
                                     fixpoint_kvid,
                                     vec![fixpoint::Expr::Var(fixpoint::Var::Local(local))],
@@ -314,8 +388,6 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                             let fixpoint_kvid = fixpoint::KVid::from_u32(fresh_kvid.as_u32());
                             task.add_cut_kvar(fixpoint_kvid);
                         }
-
-                        println!("{task}");
 
                         let verification_result = task.run().unwrap_or_else(|err| {
                             tracked_span_bug!("failed to run fixpoint: {err}")

@@ -167,6 +167,7 @@ pub struct Tables<K: Eq + Hash> {
         UnordMap<FluxId<K>, QueryResult<Option<rty::EarlyBinder<rty::Lambda>>>>,
     sort_of_assoc_reft: UnordMap<FluxId<K>, QueryResult<rty::EarlyBinder<rty::FuncSort>>>,
     fn_sig: UnordMap<K, QueryResult<rty::EarlyBinder<rty::PolyFnSig>>>,
+    is_sink: UnordMap<K, bool>,
     adt_def: UnordMap<K, QueryResult<rty::AdtDef>>,
     constant_info: UnordMap<K, QueryResult<rty::ConstantInfo>>,
     static_info: UnordMap<K, QueryResult<rty::StaticInfo>>,
@@ -228,6 +229,7 @@ impl CStore {
         merge_extern_table!(self, tcx, type_of, extern_tables);
         merge_extern_table!(self, tcx, no_panic, extern_tables);
         merge_extern_table!(self, tcx, static_info, extern_tables);
+        merge_extern_table!(self, tcx, is_sink, extern_tables);
     }
 }
 
@@ -246,6 +248,10 @@ macro_rules! get {
 impl CrateStore for CStore {
     fn fn_sig(&self, def_id: DefId) -> OptResult<rty::EarlyBinder<rty::PolyFnSig>> {
         get!(self, fn_sig, def_id)
+    }
+
+    fn is_sink(&self, def_id: DefId) -> Option<bool> {
+        get!(self, is_sink, def_id)
     }
 
     fn adt_def(&self, def_id: DefId) -> OptResult<rty::AdtDef> {
@@ -471,6 +477,7 @@ fn encode_def_ids<K: Eq + Hash + Copy>(
                     .fn_sig
                     .insert(key, genv.run_query_if_reached(def_id, GlobalEnv::fn_sig));
                 tables.no_panic.insert(key, genv.no_panic(def_id));
+                tables.is_sink.insert(key, genv.is_sink(def_id));
             }
             DefKind::Ctor(_, CtorKind::Fn) => {
                 tables

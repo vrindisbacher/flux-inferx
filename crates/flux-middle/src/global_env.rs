@@ -639,8 +639,9 @@ impl<'genv, 'tcx> GlobalEnv<'genv, 'tcx> {
     /// Transitively follow the parent-chain of `def_id` to find the first containing item with an
     /// explicit `#[flux::sink]` annotation and return whether that item is a sink or not.
     /// If no explicit annotation is found, return `false`.
-    pub fn is_sink(self, def_id: LocalDefId) -> bool {
-        self.traverse_parents_until(def_id, |did| self.fhir_attr_map(did).sink())
+    ///
+    pub fn is_sink(self, def_id: impl IntoQueryParam<DefId>) -> bool {
+        self.inner.queries.is_sink(self, def_id.into_query_param())
     }
 
     pub fn trusted_impl(self, def_id: LocalDefId) -> bool {

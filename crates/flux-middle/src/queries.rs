@@ -287,6 +287,7 @@ pub struct Queries<'genv, 'tcx> {
     lower_late_bound_vars: Cache<LocalDefId, QueryResult<List<ty::BoundVariableKind>>>,
     sort_decl_param_count: Cache<FluxDefId, usize>,
     no_panic: Cache<DefId, bool>,
+    is_sink: Cache<DefId, bool>,
 }
 
 impl<'genv, 'tcx> Queries<'genv, 'tcx> {
@@ -328,6 +329,7 @@ impl<'genv, 'tcx> Queries<'genv, 'tcx> {
             lower_late_bound_vars: Default::default(),
             sort_decl_param_count: Default::default(),
             no_panic: Default::default(),
+            is_sink: Default::default(),
         }
     }
 
@@ -960,6 +962,18 @@ impl<'genv, 'tcx> Queries<'genv, 'tcx> {
         })
     }
 
+    pub(crate) fn is_sink(&self, genv: GlobalEnv, def_id: DefId) -> bool {
+        run_with_cache(&self.is_sink, def_id, || {
+            def_id.dispatch_query(
+                genv,
+                self,
+                |def_id| genv.fhir_attr_map(def_id.local_id()).sink(),
+                |def_id| genv.cstore().is_sink(def_id),
+                |_| false,
+            )
+        })
+    }
+
     pub(crate) fn fn_sig(
         &self,
         genv: GlobalEnv,
@@ -983,7 +997,18 @@ impl<'genv, 'tcx> Queries<'genv, 'tcx> {
 
                     Ok(fn_sig)
                 },
-                |def_id| genv.cstore().fn_sig(def_id),
+                |def_id| {
+                    let fn_sig = genv.cstore().fn_sig(def_id);
+                    if let Some(Ok(mut sig)) = fn_sig {
+                        if genv.is_sink(def_id) {
+                            let inner = sig.0.add_kvars(genv, def_id, true).ok()?;
+                            sig = rty::EarlyBinder(inner);
+                        }
+                        Some(Ok(sig))
+                    } else {
+                        fn_sig
+                    }
+                },
                 |def_id| {
                     let tcx = genv.tcx();
 
@@ -1074,8 +1099,8 @@ fn item_has_specs(def_id: &DefId, specs: &crate::Specs) -> bool {
         None => {
             // This means the def_id is for some item in an external crate
             //
-            // This is definitely more nuanced but for now just return false
-            return false;
+            // This is definitely more nuanced but for now just return true
+            return true;
         }
     };
 

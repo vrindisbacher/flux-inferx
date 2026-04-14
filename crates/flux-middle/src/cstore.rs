@@ -9,6 +9,8 @@ pub type OptResult<T> = Option<QueryResult<T>>;
 
 pub trait CrateStore {
     fn fn_sig(&self, def_id: DefId) -> OptResult<rty::EarlyBinder<rty::PolyFnSig>>;
+    fn is_sink(&self, def_id: DefId) -> Option<bool>;
+
     fn adt_def(&self, def_id: DefId) -> OptResult<rty::AdtDef>;
     fn adt_sort_def(&self, def_id: DefId) -> OptResult<rty::AdtSortDef>;
     fn generics_of(&self, def_id: DefId) -> OptResult<rty::Generics>;

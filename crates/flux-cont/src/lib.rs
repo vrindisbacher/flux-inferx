@@ -16,7 +16,7 @@ use rustc_trait_selection::traits::SelectionContext;
 
 #[derive(Debug, Clone)]
 pub struct CallGraph {
-    inner: FxHashMap<DefId, Vec<DefId>>,
+    pub inner: FxHashMap<DefId, Vec<DefId>>,
 }
 
 impl CallGraph {
@@ -216,44 +216,43 @@ fn try_resolve<'tcx>(
 }
 
 /// Returns the callees of a function, or an error if we fail to resolve any callees.
-fn get_callees(tcx: &TyCtxt, def_id: DefId) -> Result<Vec<DefId>, CannotResolveReason> {
+fn get_callees(tcx: &TyCtxt, def_id: DefId) -> (Vec<DefId>, Vec<CannotResolveReason>) {
     let body = tcx.optimized_mir(def_id);
-
     let mut callees = Vec::new();
+    let mut failures = Vec::new();
+
+    if let Some(local_id) = def_id.as_local() {
+        if tcx.asyncness(def_id).is_async() {
+            for item_id in tcx.hir_body_owners() {
+                if tcx.local_parent(item_id) == local_id {
+                    callees.push(item_id.to_def_id());
+                }
+            }
+        }
+    }
+
     for bb in body.basic_blocks.iter() {
         if let TerminatorKind::Call { func, .. } = &bb.terminator().kind {
             let ty = func.ty(&body.local_decls, *tcx);
-            // 1. Here, try to resolve the callee to either a method in an impl or a free function.
-            // Otherwise, assume the caller can panic.
-            // We can resolve the callee DefId by constructing a inferctxt from the tyctxt
-
             match ty.kind() {
                 rustc_middle::ty::TyKind::FnDef(def_id, args) => {
                     let Some(_trait_id) = tcx.trait_of_assoc(*def_id) else {
-                        // If it's a free function, there's no need to resolve.
                         callees.push(*def_id);
                         continue;
                     };
-
-                    let impl_id = try_resolve(tcx, *def_id, args)?;
-
-                    if !tcx.is_mir_available(impl_id) {
-                        return Err(CannotResolveReason::NoMIRAvailable(
-                            impl_id,
-                            tcx.def_kind(impl_id),
-                        ));
+                    match try_resolve(tcx, *def_id, args) {
+                        Ok(impl_id) => callees.push(impl_id),
+                        Err(reason) => failures.push(reason),
                     }
-
-                    callees.push(impl_id);
                 }
                 _ => {
-                    // Error case 2: We're trying to reason about something that's not an FnDef.
-                    return Err(CannotResolveReason::NotFnDef(def_id));
+                    failures.push(CannotResolveReason::NotFnDef(def_id));
                 }
             };
         }
     }
-    Ok(callees)
+
+    (callees, failures)
 }
 
 /// Explores the call graph starting from the root function, populating the call graph and resolution failures.
@@ -263,9 +262,9 @@ fn explore(
     call_graph: &mut CallGraph,
     resolution_failures: &mut FxHashMap<DefId, CannotResolveReason>,
 ) {
-    let mut worklist: Vec<DefId> = roots.to_vec();
+    let mut worklist: Vec<DefId> = Vec::new();
 
-    // 1. Seed the worklist with the root functions, and add their callees to the call graph.
+    // 1. Seed with roots
     for root in roots {
         let root = *root;
         if !tcx.is_mir_available(root) {
@@ -277,65 +276,40 @@ fn explore(
                     .insert(root, CannotResolveReason::NoMIRAvailable(root, def_kind));
             }
             call_graph.insert(root, Vec::new());
-            return;
+            continue;
         }
 
-        match get_callees(&tcx, root) {
-            Ok(callees) => {
-                call_graph.insert(root, callees);
-            }
-            Err(reason) => {
-                call_graph.insert(root, Vec::new());
-                resolution_failures.insert(root, reason);
-                return;
-            }
+        let (callees, failures) = get_callees(&tcx, root);
+        call_graph.insert(root, callees);
+        for failure in failures {
+            resolution_failures.insert(root, failure);
         }
+        worklist.push(root);
     }
 
-    // 2. Explore reachable callees (build closed call graph)
+    // 2. Explore reachable callees
     while let Some(f) = worklist.pop() {
         let callees = call_graph.get(&f).unwrap().clone();
 
         for callee in callees {
-            if !call_graph.contains_key(&callee) {
-                if tcx.is_mir_available(callee) {
-                    match get_callees(&tcx, callee) {
-                        Ok(callees) => {
-                            call_graph.insert(callee, callees);
-                            worklist.push(callee);
-                        }
-                        Err(reason) => {
-                            resolution_failures.insert(callee, reason);
-                            continue;
-                        }
-                    }
-                } else {
-                    resolution_failures.insert(
-                        callee,
-                        CannotResolveReason::NoMIRAvailable(callee, tcx.def_kind(callee)),
-                    );
-                    continue;
-                }
+            if call_graph.contains_key(&callee) {
+                continue;
             }
 
-            if !call_graph.contains_key(&callee) {
-                if tcx.is_mir_available(callee) {
-                    match get_callees(&tcx, callee) {
-                        Ok(callees) => {
-                            call_graph.insert(callee, callees);
-                            worklist.push(callee);
-                        }
-                        Err(reason) => {
-                            resolution_failures.insert(callee, reason);
-                        }
-                    }
-                } else {
-                    resolution_failures.insert(
-                        callee,
-                        CannotResolveReason::NoMIRAvailable(callee, tcx.def_kind(callee)),
-                    );
-                }
+            if !tcx.is_mir_available(callee) {
+                resolution_failures.insert(
+                    callee,
+                    CannotResolveReason::NoMIRAvailable(callee, tcx.def_kind(callee)),
+                );
+                continue;
             }
+
+            let (callee_callees, failures) = get_callees(&tcx, callee);
+            call_graph.insert(callee, callee_callees);
+            for failure in failures {
+                resolution_failures.insert(callee, failure);
+            }
+            worklist.push(callee);
         }
     }
 }

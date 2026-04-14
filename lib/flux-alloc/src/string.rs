@@ -26,3 +26,9 @@ impl Clone for String {
 pub fn mk_string(s: &str) -> String {
     s.to_string()
 }
+
+#[extern_spec]
+impl ToOwned for str {
+    #[flux::sig(fn(&str[@s]) -> String[s])]
+    fn to_owned(&self) -> String;
+}
