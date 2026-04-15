@@ -1343,8 +1343,11 @@ impl KVarGen {
         self_args: usize,
         sorts: Vec<rty::Sort>,
     ) {
-        self.kvars
-            .insert(kvid, KVarDecl { self_args, sorts, encoding: KVarEncoding::Single });
+        self.kvars.entry(kvid).or_insert(KVarDecl {
+            self_args,
+            sorts,
+            encoding: KVarEncoding::Single,
+        });
     }
 
     /// Generate a fresh [kvar] under several layers of [binders]. Each layer may contain any kind
