@@ -2,7 +2,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    hash::Hash,
+    hash::{DefaultHasher, Hash, Hasher},
     iter,
     ops::Range,
 };
@@ -298,18 +298,18 @@ impl<'de> Deserialize<'de> for TagIdx {
 }
 
 /// Keep track of all the data sorts that we need to define in fixpoint to encode the constraint.
-#[derive(Default)]
-pub struct SortEncodingCtxt {
+// #[derive(Default)]
+pub struct SortEncodingCtxt<'genv, 'tcx> {
     /// Set of all the tuple arities that need to be defined
     tuples: UnordSet<usize>,
-    /// Set of all the [`AdtDefSortDef`](rty::AdtSortDef) that need to be declared as
-    /// Fixpoint data-decls
-    adt_sorts: FxIndexSet<DefId>,
+    /// Saving all fixpoint data decls
+    adt_sorts: HashMap<DefId, usize>,
     /// Set of all opaque types that need to be defined
     opaque_sorts: FxIndexSet<FluxDefId>,
+    genv: GlobalEnv<'genv, 'tcx>,
 }
 
-impl SortEncodingCtxt {
+impl<'genv, 'tcx> SortEncodingCtxt<'genv, 'tcx> {
     pub fn sort_to_fixpoint(&mut self, sort: &rty::Sort) -> fixpoint::Sort {
         match sort {
             rty::Sort::Int => fixpoint::Sort::Int,
@@ -416,12 +416,27 @@ impl SortEncodingCtxt {
     }
 
     pub fn declare_adt(&mut self, did: DefId) -> AdtId {
-        if let Some(idx) = self.adt_sorts.get_index_of(&did) {
-            AdtId::from_usize(idx)
+        if let Some(hash) = self.adt_sorts.get(&did) {
+            AdtId::from_usize(*hash)
         } else {
-            let adt_id = AdtId::from_usize(self.adt_sorts.len());
-            self.adt_sorts.insert(did);
-            adt_id
+            let path = self
+                .genv
+                .tcx()
+                .def_path(did)
+                .to_filename_friendly_no_crate()
+                .replace("-", "_");
+
+            let mut hasher = DefaultHasher::new();
+            path.hash(&mut hasher);
+            let mut hash = hasher.finish() as usize;
+
+            if hash > 0xFFFF_FF00 {
+                hash = hash % 0xFFFF_FF00;
+            }
+
+            self.adt_sorts.insert(did, hash);
+
+            AdtId::from_usize(hash)
         }
     }
 
@@ -443,17 +458,21 @@ impl SortEncodingCtxt {
             .collect()
     }
 
-    fn append_adt_decls(
-        &mut self,
-        genv: GlobalEnv,
-        decls: &mut Vec<fixpoint::DataDecl>,
-    ) -> QueryResult {
+    fn append_adt_decls(&mut self, decls: &mut Vec<fixpoint::DataDecl>) -> QueryResult {
         // We iterate until we have processed all adt sorts because processing one adt sort may
         // discover new adt sorts to process (e.g., if an adt field has an adt sort).
-        let mut idx = 0;
-        while let Some(adt_def_id) = self.adt_sorts.get_index(idx) {
-            let adt_id = AdtId::from_usize(idx);
-            let adt_sort_def = genv.adt_sort_def_of(adt_def_id)?;
+        let adt_sorts = self
+            .adt_sorts
+            .iter()
+            .map(|(a, b)| (*a, *b))
+            .collect::<Vec<(DefId, usize)>>();
+
+        let mut adt_sorts = adt_sorts.iter();
+
+        while let Some((adt_def_id, hash)) = adt_sorts.next() {
+            let adt_id = AdtId::from_usize(*hash);
+
+            let adt_sort_def = self.genv.adt_sort_def_of(adt_def_id)?;
             decls.push(fixpoint::DataDecl {
                 name: fixpoint::DataSort::Adt(adt_id),
                 vars: adt_sort_def.param_count(),
@@ -477,7 +496,6 @@ impl SortEncodingCtxt {
                     })
                     .collect(),
             });
-            idx += 1;
         }
         Ok(())
     }
@@ -508,9 +526,9 @@ impl SortEncodingCtxt {
         );
     }
 
-    pub fn encode_data_decls(&mut self, genv: GlobalEnv) -> QueryResult<Vec<fixpoint::DataDecl>> {
+    pub fn encode_data_decls(&mut self) -> QueryResult<Vec<fixpoint::DataDecl>> {
         let mut decls = vec![];
-        self.append_adt_decls(genv, &mut decls)?;
+        self.append_adt_decls(&mut decls)?;
         Self::append_tuple_decls(&self.tuples, &mut decls);
         Ok(decls)
     }
@@ -553,7 +571,7 @@ pub struct FixpointCtxt<'genv, 'tcx, T: Eq + Hash> {
     pub comments: Vec<String>,
     pub genv: GlobalEnv<'genv, 'tcx>,
     pub kvars: KVarGen,
-    pub scx: SortEncodingCtxt,
+    pub scx: SortEncodingCtxt<'genv, 'tcx>,
     pub kcx: KVarEncodingCtxt,
     pub ecx: ExprEncodingCtxt<'genv, 'tcx>,
     pub tags: IndexVec<TagIdx, T>,
@@ -582,7 +600,12 @@ where
         Self {
             comments: vec![],
             kvars,
-            scx: SortEncodingCtxt::default(),
+            scx: SortEncodingCtxt {
+                tuples: Default::default(),
+                adt_sorts: Default::default(),
+                opaque_sorts: Default::default(),
+                genv,
+            },
             genv,
             ecx: ExprEncodingCtxt::new(genv, Some(def_id), backend),
             kcx: Default::default(),
@@ -598,7 +621,7 @@ where
         self.kcx.merge(other.kcx);
         self.ecx.const_env.merge(other.ecx.const_env);
         // merge sort encoding context
-        for did in other.scx.adt_sorts {
+        for (did, _) in other.scx.adt_sorts {
             self.scx.declare_adt(did);
         }
         for did in other.scx.opaque_sorts {
@@ -668,7 +691,7 @@ where
             qualifiers,
             scrape_quals,
             solver,
-            data_decls: self.scx.encode_data_decls(self.genv)?,
+            data_decls: self.scx.encode_data_decls()?,
             cut_kvars: Vec::new(),
         };
 
@@ -1570,7 +1593,7 @@ impl KVarSolutions {
 pub struct SortDeps {
     pub opaque_sorts: Vec<(FluxDefId, fixpoint::SortDecl)>,
     pub data_decls: Vec<fixpoint::DataDecl>,
-    pub adt_map: FxIndexSet<DefId>,
+    pub adt_map: HashMap<DefId, usize>,
 }
 
 pub struct ConstDeps {

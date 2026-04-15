@@ -285,7 +285,7 @@ impl<'genv, 'tcx> LeanEncoder<'genv, 'tcx> {
         LeanCtxt {
             genv: self.genv,
             pretty_var_map: &self.pretty_var_map,
-            adt_map: &self.sort_deps.adt_map,
+            adt_map: todo!(), //  &self.sort_deps.adt_map,
             opaque_adt_map: &self.sort_deps.opaque_sorts,
             kvar_solutions: &self.kvar_solutions,
         }
