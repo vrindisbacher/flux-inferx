@@ -8,6 +8,9 @@ pub mod slice;
 pub mod vec;
 
 #[cfg(flux)]
+pub mod hashmap;
+
+#[cfg(flux)]
 pub mod string;
 
 #[cfg(flux)]

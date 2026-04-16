@@ -395,6 +395,8 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
 
                         let cut_kvar_solutions =
                             base_fcx.parse_kvar_solutions(&verification_result.solution);
+
+                        // TODO: add qualifiers based on what the adts are and what the sink is...? this is going to be annoying af
                         for (kvar_id, sol) in cut_kvar_solutions.iter() {
                             let res = base_fcx.fixpoint_to_solution(sol);
                             println!("{kvar_id:?}: {res:?}");
