@@ -3,7 +3,7 @@ use std::{
     path::Path,
 };
 
-use flux_common::{cache::QueryCache, iter::IterExt, result::ResultExt, tracked_span_bug};
+use flux_common::{bug, cache::QueryCache, iter::IterExt, result::ResultExt, tracked_span_bug};
 use flux_config::{self as config};
 use flux_errors::FluxSession;
 use flux_infer::{
@@ -140,104 +140,104 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
             }
         }
 
-        let mut paths_to_check = Vec::new();
+        for local_def_id in genv.tcx().iter_local_def_id() {
+            let def_id = genv.maybe_extern_id(local_def_id);
+            let _ = trigger_queries(genv, def_id);
+        }
 
         for source in sources.iter() {
-            for sink in sinks.iter() {
-                // resolve the (possibly) extern spec'd sink to the actual fn that is called
-                // let resolved_sink = genv.maybe_extern_id(sink).as_extern().unwrap_or(sink);
+            let mut paths_to_check = Vec::new();
 
+            for sink in sinks.iter() {
                 let paths = source_call_graph.get_all_paths_from_to(*source, *sink);
 
                 paths_to_check.extend(paths);
             }
-        }
 
-        let def_ids_to_check =
-            paths_to_check
-                .iter()
-                .flatten()
-                .fold(HashSet::new(), |mut acc, def_id| {
-                    match def_id.as_local() {
-                        Some(local) => {
-                            acc.insert(local);
+            let def_ids_to_check =
+                paths_to_check
+                    .iter()
+                    .flatten()
+                    .fold(HashSet::new(), |mut acc, def_id| {
+                        match def_id.as_local() {
+                            Some(local) => {
+                                acc.insert(local);
+                            }
+                            None => {}
                         }
-                        None => {}
-                    }
-                    acc
-                });
+                        acc
+                    });
 
-        // get all transitive callees of the functions in the paths
-        let all_def_ids: Vec<DefId> = def_ids_to_check.iter().map(|l| l.to_def_id()).collect();
-        let additional_callees = source_call_graph.transitive_callees(&all_def_ids);
+            // get all transitive callees of the functions in the paths
+            let all_def_ids: Vec<DefId> = def_ids_to_check.iter().map(|l| l.to_def_id()).collect();
+            let additional_callees = source_call_graph.transitive_callees(&all_def_ids);
 
-        let all_to_check: HashSet<LocalDefId> = def_ids_to_check
-            .into_iter()
-            .chain(
-                additional_callees
-                    .into_iter()
-                    .filter_map(|def_id| def_id.as_local()),
-            )
-            .collect();
+            let all_to_check: HashSet<LocalDefId> = def_ids_to_check
+                .into_iter()
+                .chain(
+                    additional_callees
+                        .into_iter()
+                        .filter_map(|def_id| def_id.as_local()),
+                )
+                .collect();
 
-        for local_def_id in genv.tcx().iter_local_def_id() {
-            if !all_to_check.contains(&local_def_id) {
-                let def_id = genv.maybe_extern_id(local_def_id);
-                let _ = trigger_queries(genv, def_id);
-            }
-        }
+            let _ = all_to_check
+                .into_iter()
+                .try_for_each_exhaust(|def_id| ck.check_def_catching_bugs(def_id));
 
-        let result = all_to_check
-            .into_iter()
-            .try_for_each_exhaust(|def_id| ck.check_def_catching_bugs(def_id));
+            let mut tasks = ck.def_id_to_cstr_map.drain().map(|(_, t)| t);
 
-        let mut tasks = ck.def_id_to_cstr_map.drain().map(|(_, t)| t);
-
-        if let Some(sink_kvar) = genv.get_sink_kvar() {
             if let Some(mut mega_task) = tasks.next() {
                 for task in tasks {
                     mega_task.merge(task);
                 }
 
-                // generate a dummy constraint for the sink kvar
-                // Add sink kvar consumer directly to the mega task
-                let fixpoint_kvid = fixpoint::KVid::from_u32(sink_kvar.kvid.as_u32());
+                let mut local_sink_kvar_map = HashMap::new();
+                for sink in sinks.iter() {
+                    let sink_kvar = genv
+                        .get_sink_kvar_for(*sink)
+                        .unwrap_or_else(|| bug!("Each sink should have a stored kvar"));
 
-                // We need a local var name that doesn't clash — use a high number
-                let local = fixpoint::LocalVar::from_u32(9999);
+                    local_sink_kvar_map.insert(sink, sink_kvar.clone());
 
-                let sort = mega_task
-                    .kvars
-                    .iter()
-                    .find(|k| k.kvid == fixpoint_kvid)
-                    .map(|k| k.sorts[0].clone())
-                    .unwrap_or(fixpoint::Sort::Int);
+                    // generate a dummy constraint for each sink kvar
+                    // Add sink kvar consumer directly to the mega task
+                    let fixpoint_kvid = fixpoint::KVid::from_u32(sink_kvar.kvid.as_u32());
 
-                let bind = fixpoint::Bind {
-                    name: fixpoint::Var::Local(local),
-                    sort,
-                    pred: fixpoint::Pred::KVar(
-                        fixpoint_kvid,
-                        vec![fixpoint::Expr::Var(fixpoint::Var::Local(local))],
-                    ),
-                };
+                    // We need a local var name that doesn't clash — use a high number
+                    let local = fixpoint::LocalVar::from_u32(9999);
 
-                let trivial = fixpoint::Constraint::Pred(
-                    fixpoint::Pred::Expr(fixpoint::Expr::Atom(
-                        fixpoint::BinRel::Lt,
-                        Box::new([fixpoint::Expr::int(10), fixpoint::Expr::int(11)]),
-                    )),
-                    None,
-                );
+                    let sort = mega_task
+                        .kvars
+                        .iter()
+                        .find(|k| k.kvid == fixpoint_kvid)
+                        .map(|k| k.sorts[0].clone())
+                        .unwrap_or(fixpoint::Sort::Int);
 
-                let consumer = fixpoint::Constraint::ForAll(bind, Box::new(trivial));
+                    let bind = fixpoint::Bind {
+                        name: fixpoint::Var::Local(local),
+                        sort,
+                        pred: fixpoint::Pred::KVar(
+                            fixpoint_kvid,
+                            vec![fixpoint::Expr::Var(fixpoint::Var::Local(local))],
+                        ),
+                    };
 
-                // Wrap existing constraint with the new consumer
-                let existing =
-                    std::mem::replace(&mut mega_task.constraint, fixpoint::Constraint::TRUE);
-                mega_task.constraint = fixpoint::Constraint::Conj(vec![existing, consumer]);
+                    let trivial = fixpoint::Constraint::Pred(
+                        fixpoint::Pred::Expr(fixpoint::Expr::Atom(
+                            fixpoint::BinRel::Lt,
+                            Box::new([fixpoint::Expr::int(10), fixpoint::Expr::int(11)]),
+                        )),
+                        None,
+                    );
 
-                println!("{mega_task:?}");
+                    let consumer = fixpoint::Constraint::ForAll(bind, Box::new(trivial));
+
+                    // Wrap existing constraint with the new consumer
+                    let existing =
+                        std::mem::replace(&mut mega_task.constraint, fixpoint::Constraint::TRUE);
+                    mega_task.constraint = fixpoint::Constraint::Conj(vec![existing, consumer]);
+                }
 
                 let verification_result = mega_task
                     .run()
@@ -252,16 +252,13 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                     let kvar_solutions =
                         base_fcx.parse_kvar_solutions(&verification_result.non_cuts_solution);
 
-                    println!("{kvar_solutions:?}");
-
-                    for (kvar_id, sol) in kvar_solutions.iter() {
-                        if *kvar_id
-                            != flux_infer::fixpoint_encoding::fixpoint::KVid::from_u32(
-                                sink_kvar.kvid.as_u32(),
-                            )
-                        {
-                            continue;
-                        }
+                    for (sink_def_id, sink_kvar) in local_sink_kvar_map.iter() {
+                        let kvid = flux_infer::fixpoint_encoding::fixpoint::KVid::from_u32(
+                            sink_kvar.kvid.as_u32(),
+                        );
+                        let sol = kvar_solutions.get(&kvid).unwrap_or_else(|| {
+                            bug!("Sink KVar had no solution in mono constraint")
+                        });
                         let res = base_fcx.fixpoint_to_solution(sol);
                         let kvar_sort = res.vars()[0].expect_sort().clone();
                         let disjuncts = res.skip_binder_ref().to_dnf();
@@ -396,10 +393,20 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                         let cut_kvar_solutions =
                             base_fcx.parse_kvar_solutions(&verification_result.solution);
 
-                        // TODO: add qualifiers based on what the adts are and what the sink is...? this is going to be annoying af
+                        // EMIT SOURCE FOR SCRIPT
+                        let mut solutions = Vec::new();
                         for (kvar_id, sol) in cut_kvar_solutions.iter() {
                             let res = base_fcx.fixpoint_to_solution(sol);
-                            println!("{kvar_id:?}: {res:?}");
+                            solutions.push((*kvar_id, res));
+                        }
+                        if !solutions.is_empty() {
+                            let sink_for = genv.sink_for(*sink_def_id);
+                            println!("SOLUTION FOR {:?}", source);
+                            println!("{sink_for:?}");
+                            for (kvar_id, res) in &solutions {
+                                println!("{kvar_id:?}: {:#?}", res);
+                            }
+                            println!();
                         }
                     }
                 }
@@ -442,7 +449,7 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
 
         tracing::info!("Callbacks::check_crate");
 
-        result
+        Ok(())
     })
 }
 

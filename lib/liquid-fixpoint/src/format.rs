@@ -52,9 +52,32 @@ impl<T: Types> fmt::Display for Task<T> {
         if self.cut_kvars.len() > 0 {
             writeln!(
                 f,
-                "(qualif Wild2 ((a0 Adt0) (a1# Str) (a2# Str)) (= (Map_select (fld0$1 a0) a1) a2))"
+                "
+;; qualifiers to determine the variant
+
+(qualif DynIsBool ((a0 Adt2831635821) (a1# Str))
+  (= mkadt1194516581$2 (fld1924543948$0 (Map_select (fld2831635821$1 a0) a1))))
+
+(qualif DynIsStr ((a0 Adt2831635821) (a1# Str))
+  (= mkadt1194516581$0  (fld1924543948$0 (Map_select (fld2831635821$1 a0) a1))))
+
+(qualif DynIsNum ((a0 Adt2831635821) (a1# Str))
+  (= mkadt1194516581$1 (fld1924543948$0 (Map_select (fld2831635821$1 a0) a1))))
+
+(qualif DynStrVal ((a0 Adt2831635821) (a1# Str) (a2# Str))
+  (= (fld1924543948$1 (Map_select (fld2831635821$1 a0) a1)) a2))
+
+(qualif DynBoolValT ((a0 Adt2831635821) (a1# Str))
+   (= true (fld1924543948$2 (Map_select (fld2831635821$1 a0) a1))))
+
+(qualif DynBoolValF ((a0 Adt2831635821) (a1# Str))
+   (= false (fld1924543948$2 (Map_select (fld2831635821$1 a0) a1))))
+
+;; Table name
+(qualif DynamoTableName ((a0 Adt2831635821) (a1# Str))
+  (= (fld2831635821$0 a0) a1))
+            "
             )?;
-            writeln!(f, "(qualif Wild3 ((a0 Adt0) (a1# Str) ) (= (fld0$0 a0) a1))")?;
         }
 
         for kvar in &self.cut_kvars {

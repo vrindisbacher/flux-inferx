@@ -42,9 +42,25 @@ use rustc_span::{ErrorGuaranteed, Span, Symbol, symbol::Ident};
 
 use crate::{
     def_id::{FluxDefId, FluxLocalDefId, MaybeExternId},
+    fhir,
     global_env::GlobalEnv,
     rty::QualifierKind,
 };
+
+#[derive(Debug, Clone, Copy, Encodable, Decodable)]
+pub enum SinkType {
+    DynamoPut,
+    Unknown,
+}
+
+impl Into<SinkType> for flux_syntax::surface::SinkType {
+    fn into(self) -> SinkType {
+        match self {
+            flux_syntax::surface::SinkType::DynamoPut => SinkType::DynamoPut,
+            flux_syntax::surface::SinkType::Unknown => SinkType::Unknown,
+        }
+    }
+}
 
 pub enum Attr {
     Trusted(Trusted),
@@ -55,7 +71,7 @@ pub enum Attr {
     InferOpts(PartialInferOpts),
     NoPanic,
     Source,
-    Sink,
+    Sink(SinkType),
 }
 
 #[derive(Clone, Copy, Default)]
@@ -83,7 +99,14 @@ impl AttrMap<'_> {
     }
 
     pub(crate) fn sink(&self) -> bool {
-        self.attrs.iter().any(|attr| matches!(attr, Attr::Sink))
+        self.attrs.iter().any(|attr| matches!(attr, Attr::Sink(..)))
+    }
+
+    pub(crate) fn sink_for(&self) -> fhir::SinkType {
+        self.attrs
+            .iter()
+            .find_map(|attr| if let Attr::Sink(sink_type) = attr { Some(*sink_type) } else { None })
+            .unwrap_or_else(|| bug!("Sink should always have an associated sink type"))
     }
 
     pub(crate) fn trusted(&self) -> Option<Trusted> {

@@ -585,7 +585,14 @@ impl<'a, 'tcx> SpecCollector<'a, 'tcx> {
             }
             ("ignore", hir::AttrArgs::Empty) => FluxAttrKind::Ignore(surface::Ignored::Yes),
             ("source", hir::AttrArgs::Empty) => FluxAttrKind::Source,
-            ("sink", hir::AttrArgs::Empty) => FluxAttrKind::Sink,
+            ("sink", hir::AttrArgs::Delimited(dargs)) => {
+                self.parse(dargs, ParseSess::parse_ident, |ident| {
+                    match ident.as_str() {
+                        "DynamoPut" => FluxAttrKind::Sink(SinkType::DynamoPut),
+                        _ => FluxAttrKind::Sink(SinkType::Unknown),
+                    }
+                })?
+            }
             ("trusted", hir::AttrArgs::Delimited(dargs)) => {
                 self.parse(dargs, ParseSess::parse_yes_or_no_with_reason, |b| {
                     FluxAttrKind::Trusted(b.into())
@@ -704,6 +711,21 @@ struct FluxAttr {
 }
 
 #[derive(Debug)]
+enum SinkType {
+    DynamoPut,
+    Unknown,
+}
+
+impl Into<flux_syntax::surface::SinkType> for SinkType {
+    fn into(self) -> flux_syntax::surface::SinkType {
+        match self {
+            SinkType::DynamoPut => surface::SinkType::DynamoPut,
+            SinkType::Unknown => surface::SinkType::Unknown,
+        }
+    }
+}
+
+#[derive(Debug)]
 enum FluxAttrKind {
     Trusted(Trusted),
     TrustedImpl(Trusted),
@@ -731,7 +753,7 @@ enum FluxAttrKind {
     NoPanic,
     NoPanicIf(surface::Expr),
     Source,
-    Sink,
+    Sink(SinkType),
     /// See `detachXX.rs`
     DetachedSpecs(surface::DetachedSpecs),
 }
@@ -890,7 +912,7 @@ impl FluxAttrs {
                 FluxAttrKind::ShouldFail => surface::Attr::ShouldFail,
                 FluxAttrKind::NoPanic => surface::Attr::NoPanic,
                 FluxAttrKind::Source => surface::Attr::Source,
-                FluxAttrKind::Sink => surface::Attr::Sink,
+                FluxAttrKind::Sink(sink_type) => surface::Attr::Sink(sink_type.into()),
                 FluxAttrKind::Opaque
                 | FluxAttrKind::Reflect
                 | FluxAttrKind::FnSig(_)
@@ -945,7 +967,7 @@ impl FluxAttrKind {
             FluxAttrKind::NoPanic => attr_name!(NoPanic),
             FluxAttrKind::NoPanicIf(_) => attr_name!(NoPanicIf),
             FluxAttrKind::Source => attr_name!(Source),
-            FluxAttrKind::Sink => attr_name!(Sink),
+            FluxAttrKind::Sink(_) => attr_name!(Sink),
         }
     }
 }

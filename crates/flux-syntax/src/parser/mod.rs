@@ -157,6 +157,13 @@ pub(crate) fn parse_ident_list(cx: &mut ParseCtxt) -> ParseResult<Vec<Ident>> {
 }
 
 /// ```text
+/// ⟨ident⟩
+/// ```
+pub(crate) fn parse_single_ident(cx: &mut ParseCtxt) -> ParseResult<Ident> {
+    parse_ident(cx)
+}
+
+/// ```text
 /// ⟨flux_items⟩ := ⟨flux_item⟩*
 /// ```
 pub(crate) fn parse_flux_items(cx: &mut ParseCtxt) -> ParseResult<Vec<FluxItem>> {

@@ -254,8 +254,8 @@ impl SolutionTrace {
 
 pub struct ParsedResult {
     pub status: FixpointStatus<TagIdx>,
-    pub solution: FxIndexMap<fixpoint::KVid, FixpointSolution>,
-    pub non_cut_solution: FxIndexMap<fixpoint::KVid, FixpointSolution>,
+    pub solution: HashMap<fixpoint::KVid, FixpointSolution>,
+    pub non_cut_solution: HashMap<fixpoint::KVid, FixpointSolution>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -722,8 +722,8 @@ where
         } else {
             Ok(ParsedResult {
                 status: result.status,
-                solution: FxIndexMap::default(),
-                non_cut_solution: FxIndexMap::default(),
+                solution: HashMap::default(),
+                non_cut_solution: HashMap::default(),
             })
         }
     }
@@ -765,7 +765,7 @@ where
     pub fn parse_kvar_solutions(
         &mut self,
         kvar_binds: &[KVarBind],
-    ) -> FxIndexMap<fixpoint::KVid, FixpointSolution> {
+    ) -> HashMap<fixpoint::KVid, FixpointSolution> {
         kvar_binds
             .iter()
             .map(|b| (parse_kvid(&b.kvar), self.parse_kvar_solution(&b.val)))
@@ -1550,8 +1550,8 @@ pub struct KVarSolutions {
 impl KVarSolutions {
     pub(crate) fn closed_solutions(
         variable_sorts: HashMap<fixpoint::Var, fixpoint::Sort>,
-        cut_solutions: FxIndexMap<fixpoint::KVid, FixpointSolution>,
-        non_cut_solutions: FxIndexMap<fixpoint::KVid, FixpointSolution>,
+        cut_solutions: HashMap<fixpoint::KVid, FixpointSolution>,
+        non_cut_solutions: HashMap<fixpoint::KVid, FixpointSolution>,
     ) -> Self {
         let closed_cut_solutions = cut_solutions
             .into_iter()

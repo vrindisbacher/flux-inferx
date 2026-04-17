@@ -28,7 +28,7 @@ use rustc_span::{DUMMY_SP, Span, Symbol};
 
 use crate::{
     def_id::{FluxDefId, FluxId, MaybeExternId, ResolvedDefId},
-    fhir,
+    fhir::{self, SinkType},
     global_env::GlobalEnv,
     rty::{
         self, AliasReft, Expr, GenericArg,
@@ -288,6 +288,7 @@ pub struct Queries<'genv, 'tcx> {
     sort_decl_param_count: Cache<FluxDefId, usize>,
     no_panic: Cache<DefId, bool>,
     is_sink: Cache<DefId, bool>,
+    sink_for: Cache<DefId, SinkType>,
 }
 
 impl<'genv, 'tcx> Queries<'genv, 'tcx> {
@@ -330,6 +331,7 @@ impl<'genv, 'tcx> Queries<'genv, 'tcx> {
             sort_decl_param_count: Default::default(),
             no_panic: Default::default(),
             is_sink: Default::default(),
+            sink_for: Default::default(),
         }
     }
 
@@ -974,6 +976,18 @@ impl<'genv, 'tcx> Queries<'genv, 'tcx> {
         })
     }
 
+    pub(crate) fn sink_for(&self, genv: GlobalEnv, def_id: DefId) -> SinkType {
+        run_with_cache(&self.sink_for, def_id, || {
+            def_id.dispatch_query(
+                genv,
+                self,
+                |def_id| genv.fhir_attr_map(def_id.local_id()).sink_for(),
+                |def_id| genv.cstore().sink_for(def_id),
+                |_| bug!("sink should always have an associated type"),
+            )
+        })
+    }
+
     pub(crate) fn fn_sig(
         &self,
         genv: GlobalEnv,
@@ -1054,7 +1068,7 @@ impl<'genv, 'tcx> Queries<'genv, 'tcx> {
 fn is_sink(def_id: &DefId, specs: &crate::Specs) -> bool {
     fn contains_sink(attrs: &Vec<Attr>) -> bool {
         for attr in attrs.iter() {
-            if let Attr::Sink = attr {
+            if let Attr::Sink(..) = attr {
                 return true;
             }
         }

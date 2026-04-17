@@ -76,6 +76,10 @@ impl ParseSess {
         parser::parse_ident_list(&mut self.cx(tokens, span))
     }
 
+    pub fn parse_ident(&mut self, tokens: &TokenStream, span: Span) -> ParseResult<Ident> {
+        parser::parse_single_ident(&mut self.cx(tokens, span))
+    }
+
     pub fn parse_flux_item(
         &mut self,
         tokens: &TokenStream,

@@ -546,8 +546,9 @@ impl rty::PolyFnSig {
             );
             // save the sink kvar
             if is_sink {
-                genv.set_sink_kvar(requires_kvar.clone());
+                genv.set_sink_kvar_for(def_id, requires_kvar.clone());
             }
+
             let inputs: flux_arc_interner::Interned<[rty::Ty]> = fn_sig
                 .inputs
                 .iter()

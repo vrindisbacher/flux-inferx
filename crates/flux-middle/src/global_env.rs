@@ -56,7 +56,7 @@ struct GlobalEnvInner<'genv, 'tcx> {
     tempdir: TempDir,
     kvars: RefCell<KvarMap>,
     kvid: RefCell<rty::KVid>,
-    sink_kvar: RefCell<Option<KVar>>,
+    sink_kvars: RefCell<HashMap<DefId, KVar>>,
 }
 
 impl<'tcx> GlobalEnv<'_, 'tcx> {
@@ -74,9 +74,9 @@ impl<'tcx> GlobalEnv<'_, 'tcx> {
         let queries = Queries::new(providers);
         let kvars = Default::default();
         let kvid = RefCell::new(rty::KVid::from(0_usize));
-        let sink_kvar = RefCell::new(None);
+        let sink_kvars = RefCell::new(Default::default());
         let inner =
-            GlobalEnvInner { tcx, sess, cstore, arena, queries, tempdir, kvars, kvid, sink_kvar };
+            GlobalEnvInner { tcx, sess, cstore, arena, queries, tempdir, kvars, kvid, sink_kvars };
         f(GlobalEnv { inner: &inner })
     }
 }
@@ -160,13 +160,14 @@ impl<'genv, 'tcx> GlobalEnv<'genv, 'tcx> {
         self.tcx().def_kind(def_id.into_query_param())
     }
 
-    pub fn set_sink_kvar(&self, kvar: KVar) {
-        let mut sink_kvar = self.inner.sink_kvar.borrow_mut();
-        *sink_kvar = Some(kvar);
+    pub fn set_sink_kvar_for(&self, def_id: DefId, kvar: KVar) {
+        let mut sink_kvar = self.inner.sink_kvars.borrow_mut();
+        sink_kvar.insert(def_id, kvar);
     }
 
-    pub fn get_sink_kvar(&self) -> Option<KVar> {
-        self.inner.sink_kvar.borrow().as_ref().cloned()
+    pub fn get_sink_kvar_for(&self, def_id: DefId) -> Option<KVar> {
+        let inner = self.inner.sink_kvars.borrow_mut();
+        inner.get(&def_id).cloned()
     }
 
     pub fn feed_kvars(&self, kv: KvarMap) {
@@ -642,6 +643,10 @@ impl<'genv, 'tcx> GlobalEnv<'genv, 'tcx> {
     ///
     pub fn is_sink(self, def_id: impl IntoQueryParam<DefId>) -> bool {
         self.inner.queries.is_sink(self, def_id.into_query_param())
+    }
+
+    pub fn sink_for(self, def_id: impl IntoQueryParam<DefId>) -> fhir::SinkType {
+        self.inner.queries.sink_for(self, def_id.into_query_param())
     }
 
     pub fn trusted_impl(self, def_id: LocalDefId) -> bool {

@@ -612,6 +612,12 @@ impl From<bool> for Ignored {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum SinkType {
+    DynamoPut,
+    Unknown
+}
+
 /// An attribute attaches metadata to an item.
 ///
 /// Note that some of these attributes correspond to a Rust attribute, but some don't. For example,
@@ -643,7 +649,7 @@ pub enum Attr {
     /// A `#[source]` attribute
     Source,
     /// A `#[sink]` attribute
-    Sink,
+    Sink(SinkType),
 }
 
 #[derive(Debug)]
