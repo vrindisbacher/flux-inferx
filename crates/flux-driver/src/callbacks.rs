@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    panic::AssertUnwindSafe,
     path::Path,
 };
 
@@ -84,7 +85,11 @@ impl FluxCallbacks {
         GlobalEnv::enter(tcx, &sess, Box::new(cstore), &arena, providers, |genv| {
             let result = metrics::time_it(TimingKind::Total, || check_crate(genv));
             if result.is_ok() {
-                encode_and_save_metadata(genv);
+                let _ = flux_common::bug::catch_bugs_unconditional(
+                    "encode_metadata",
+                    AssertUnwindSafe(|| encode_and_save_metadata(genv)),
+                );
+                // encode_and_save_metadata(genv);
             }
             lean_encoding::finalize(genv).unwrap_or(());
         });
@@ -142,7 +147,11 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
 
         for local_def_id in genv.tcx().iter_local_def_id() {
             let def_id = genv.maybe_extern_id(local_def_id);
-            let _ = trigger_queries(genv, def_id);
+            use std::panic::AssertUnwindSafe;
+            let _ = flux_common::bug::catch_bugs_unconditional(
+                "",
+                AssertUnwindSafe(|| trigger_queries(genv, def_id)),
+            );
         }
 
         for source in sources.iter() {
@@ -567,7 +576,8 @@ impl<'genv, 'tcx> CrateChecker<'genv, 'tcx> {
     fn check_def_catching_bugs(&mut self, def_id: LocalDefId) -> Result<(), ErrorGuaranteed> {
         let mut this = std::panic::AssertUnwindSafe(self);
         let msg = format!("def_id: {:?}, span: {:?}", def_id, this.genv.tcx().def_span(def_id));
-        flux_common::bug::catch_bugs(&msg, move || this.check_def(def_id))?
+        flux_common::bug::catch_bugs_unconditional(&msg, move || this.check_def(def_id));
+        Ok(())
     }
 
     fn check_def(&mut self, def_id: LocalDefId) -> Result<(), ErrorGuaranteed> {

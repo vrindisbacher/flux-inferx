@@ -191,10 +191,11 @@ pub fn build_call_graph(tcx: TyCtxt, roots: &[DefId]) -> GraphBuildResult {
 /// Tries to resolve a trait method call to an impl method. If successful, returns the DefId of the impl method.
 fn try_resolve<'tcx>(
     tcx: &TyCtxt<'tcx>,
+    caller_def_id: DefId,
     def_id: DefId,
     args: rustc_middle::ty::GenericArgsRef<'tcx>,
 ) -> Result<DefId, CannotResolveReason> {
-    let param_env = tcx.param_env(def_id);
+    let param_env = tcx.param_env(caller_def_id); // <-- was param_env(def_id)
     let infcx = tcx
         .infer_ctxt()
         .with_next_trait_solver(true)
@@ -204,7 +205,6 @@ fn try_resolve<'tcx>(
     let resolved = resolve_call_query(*tcx, &mut selcx, param_env, def_id, args);
 
     let Some((impl_id, _)) = resolved else {
-        // Error case 1: we fail to resolve a trait method to an impl.
         return Err(CannotResolveReason::UnresolvedTraitMethod(def_id));
     };
 
@@ -216,17 +216,19 @@ fn try_resolve<'tcx>(
 }
 
 /// Returns the callees of a function, or an error if we fail to resolve any callees.
-fn get_callees(tcx: &TyCtxt, def_id: DefId) -> (Vec<DefId>, Vec<CannotResolveReason>) {
-    let body = tcx.optimized_mir(def_id);
+fn get_callees(tcx: &TyCtxt, caller_def_id: DefId) -> (Vec<DefId>, Vec<CannotResolveReason>) {
+    if !tcx.is_mir_available(caller_def_id) || !tcx.def_kind(caller_def_id).is_fn_like() {
+        return (vec![], vec![]);
+    }
+
+    let body = tcx.optimized_mir(caller_def_id);
     let mut callees = Vec::new();
     let mut failures = Vec::new();
 
-    if let Some(local_id) = def_id.as_local() {
-        if tcx.asyncness(def_id).is_async() {
-            for item_id in tcx.hir_body_owners() {
-                if tcx.local_parent(item_id) == local_id {
-                    callees.push(item_id.to_def_id());
-                }
+    if let Some(local_id) = caller_def_id.as_local() {
+        for item_id in tcx.hir_body_owners() {
+            if tcx.local_parent(item_id) == local_id && tcx.def_kind(item_id).is_fn_like() {
+                callees.push(item_id.to_def_id());
             }
         }
     }
@@ -240,13 +242,13 @@ fn get_callees(tcx: &TyCtxt, def_id: DefId) -> (Vec<DefId>, Vec<CannotResolveRea
                         callees.push(*def_id);
                         continue;
                     };
-                    match try_resolve(tcx, *def_id, args) {
+                    match try_resolve(tcx, caller_def_id, *def_id, args) {
                         Ok(impl_id) => callees.push(impl_id),
                         Err(reason) => failures.push(reason),
                     }
                 }
                 _ => {
-                    failures.push(CannotResolveReason::NotFnDef(def_id));
+                    failures.push(CannotResolveReason::NotFnDef(caller_def_id));
                 }
             };
         }
