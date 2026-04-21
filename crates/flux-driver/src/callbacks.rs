@@ -125,10 +125,6 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
         let mut source_call_graph = flux_cont::CallGraph::new();
         for source in sources.iter() {
             let cg = genv.call_graph(source).expect("Could not build call graph");
-
-            println!("source: {source:?}\nCG: {cg:?}");
-            println!();
-
             source_call_graph.merge(cg);
         }
 

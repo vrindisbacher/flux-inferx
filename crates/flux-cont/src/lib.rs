@@ -305,7 +305,6 @@ fn explore(
         let callees = call_graph.get(&f).unwrap().clone();
 
         for callee in callees {
-            println!("LOOKING AT {callee:?}");
             if call_graph.contains_key(&callee) {
                 continue;
             }
