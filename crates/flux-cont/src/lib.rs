@@ -154,11 +154,11 @@ impl CallGraph {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum CannotResolveReason {
     NoMIRAvailable(DefId, DefKind),
     UnresolvedTraitMethod(DefId),
-    NotFnDef(DefId),
+    NotFnDef { caller: DefId, callee_ty: String },
 }
 
 #[derive(Debug, Clone)]
@@ -188,34 +188,34 @@ pub fn build_call_graph(tcx: TyCtxt, roots: &[DefId]) -> GraphBuildResult {
     GraphBuildResult { call_graph, resolution_failures }
 }
 
-/// Tries to resolve a trait method call to an impl method. If successful, returns the DefId of the impl method.
-fn try_resolve<'tcx>(
+/// Try to resolve a trait call to a concrete impl. Returns the resolved impl
+/// DefId when the impl overrides the method; otherwise returns the original
+/// (trait) DefId so the default method body is still reachable in the call graph.
+fn resolve_or_fallback<'tcx>(
     tcx: &TyCtxt<'tcx>,
     caller_def_id: DefId,
     def_id: DefId,
     args: rustc_middle::ty::GenericArgsRef<'tcx>,
-) -> Result<DefId, CannotResolveReason> {
-    let param_env = tcx.param_env(caller_def_id); // <-- was param_env(def_id)
+) -> DefId {
+    let param_env = tcx.param_env(caller_def_id);
     let infcx = tcx
         .infer_ctxt()
         .with_next_trait_solver(true)
         .build(TypingMode::non_body_analysis());
     let mut selcx = SelectionContext::new(&infcx);
 
-    let resolved = resolve_call_query(*tcx, &mut selcx, param_env, def_id, args);
-
-    let Some((impl_id, _)) = resolved else {
-        return Err(CannotResolveReason::UnresolvedTraitMethod(def_id));
-    };
-
-    if !tcx.is_mir_available(impl_id) {
-        return Err(CannotResolveReason::NoMIRAvailable(impl_id, tcx.def_kind(impl_id)));
+    match resolve_call_query(*tcx, &mut selcx, param_env, def_id, args) {
+        Some((impl_id, _)) => impl_id,
+        // Default method, generic parameter, or otherwise unresolvable.
+        // Fall back to the trait method DefId — its MIR (if any) contains
+        // the default body, which is what we need for sinks like `.send()`.
+        None => def_id,
     }
-
-    Ok(impl_id)
 }
 
-/// Returns the callees of a function, or an error if we fail to resolve any callees.
+/// Returns the callees of a function. Unresolved trait calls fall back to the
+/// trait method DefId rather than being dropped, so default-method bodies
+/// remain reachable in the call graph.
 fn get_callees(tcx: &TyCtxt, caller_def_id: DefId) -> (Vec<DefId>, Vec<CannotResolveReason>) {
     if !tcx.is_mir_available(caller_def_id) || !tcx.def_kind(caller_def_id).is_fn_like() {
         return (vec![], vec![]);
@@ -225,32 +225,43 @@ fn get_callees(tcx: &TyCtxt, caller_def_id: DefId) -> (Vec<DefId>, Vec<CannotRes
     let mut callees = Vec::new();
     let mut failures = Vec::new();
 
-    if let Some(local_id) = caller_def_id.as_local() {
-        for item_id in tcx.hir_body_owners() {
-            if tcx.local_parent(item_id) == local_id && tcx.def_kind(item_id).is_fn_like() {
-                callees.push(item_id.to_def_id());
-            }
-        }
-    }
-
     for bb in body.basic_blocks.iter() {
-        if let TerminatorKind::Call { func, .. } = &bb.terminator().kind {
-            let ty = func.ty(&body.local_decls, *tcx);
-            match ty.kind() {
-                rustc_middle::ty::TyKind::FnDef(def_id, args) => {
-                    let Some(_trait_id) = tcx.trait_of_assoc(*def_id) else {
+        // Pick up coroutine bodies produced by async blocks / generators.
+        for stmt in &bb.statements {
+            if let rustc_middle::mir::StatementKind::Assign(assign) = &stmt.kind {
+                let (_place, rvalue) = &**assign;
+                if let rustc_middle::mir::Rvalue::Aggregate(kind, _) = rvalue {
+                    if let rustc_middle::mir::AggregateKind::Coroutine(def_id, ..) = &**kind {
                         callees.push(*def_id);
-                        continue;
-                    };
-                    match try_resolve(tcx, caller_def_id, *def_id, args) {
-                        Ok(impl_id) => callees.push(impl_id),
-                        Err(reason) => failures.push(reason),
                     }
                 }
-                _ => {
-                    failures.push(CannotResolveReason::NotFnDef(caller_def_id));
+            }
+        }
+
+        if let TerminatorKind::Call { func, .. } = &bb.terminator().kind {
+            let ty = func.ty(&body.local_decls, *tcx);
+
+            match ty.kind() {
+                rustc_middle::ty::TyKind::FnDef(def_id, args) => {
+                    let resolved = if tcx.trait_of_assoc(*def_id).is_some() {
+                        resolve_or_fallback(tcx, caller_def_id, *def_id, args)
+                    } else {
+                        *def_id
+                    };
+                    callees.push(resolved);
                 }
-            };
+                rustc_middle::ty::TyKind::Closure(def_id, _)
+                | rustc_middle::ty::TyKind::Coroutine(def_id, _) => {
+                    callees.push(*def_id);
+                }
+                _ => {
+                    let ty_str = format!("{:?}", ty);
+                    failures.push(CannotResolveReason::NotFnDef {
+                        caller: caller_def_id,
+                        callee_ty: ty_str,
+                    });
+                }
+            }
         }
     }
 
@@ -294,6 +305,7 @@ fn explore(
         let callees = call_graph.get(&f).unwrap().clone();
 
         for callee in callees {
+            println!("LOOKING AT {callee:?}");
             if call_graph.contains_key(&callee) {
                 continue;
             }

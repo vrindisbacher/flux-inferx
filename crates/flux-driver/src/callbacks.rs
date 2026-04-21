@@ -107,20 +107,6 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
 
         let mut ck = CrateChecker::new(genv);
 
-        // a call graph constructed only from fns that are marked with the source attribute
-        let mut source_call_graph = flux_cont::CallGraph::new();
-
-        for local_def_id in genv.tcx().iter_local_def_id() {
-            // check whether the local def id is fn like and is a source
-            if genv.tcx().def_kind(local_def_id).is_fn_like() && genv.is_source(local_def_id) {
-                // if so, then we will want the call graph
-                if let Ok(fn_call_graph) = genv.call_graph(local_def_id) {
-                    // merge the call graph with the other source nodes
-                    source_call_graph.merge(fn_call_graph);
-                }
-            }
-        }
-
         let (sources, mut sinks) = genv.tcx().iter_local_def_id().fold(
             (Vec::new(), Vec::new()),
             |(mut sources, mut sinks), local_def_id| {
@@ -135,6 +121,16 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                 (sources, sinks)
             },
         );
+
+        let mut source_call_graph = flux_cont::CallGraph::new();
+        for source in sources.iter() {
+            let cg = genv.call_graph(source).expect("Could not build call graph");
+
+            println!("source: {source:?}\nCG: {cg:?}");
+            println!();
+
+            source_call_graph.merge(cg);
+        }
 
         // check non-locals in call graph for sinks
         for (_def_id, callees) in &source_call_graph.inner {
@@ -155,6 +151,10 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
         }
 
         for source in sources.iter() {
+            let source_call_graph = genv
+                .call_graph(source)
+                .expect("Could not create call graph");
+
             let mut paths_to_check = Vec::new();
 
             for sink in sinks.iter() {
@@ -162,6 +162,8 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
 
                 paths_to_check.extend(paths);
             }
+
+            println!("{paths_to_check:?}");
 
             let def_ids_to_check =
                 paths_to_check
@@ -247,6 +249,8 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                         std::mem::replace(&mut mega_task.constraint, fixpoint::Constraint::TRUE);
                     mega_task.constraint = fixpoint::Constraint::Conj(vec![existing, consumer]);
                 }
+
+                println!("{mega_task:?}");
 
                 let verification_result = mega_task
                     .run()

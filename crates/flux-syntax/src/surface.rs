@@ -615,7 +615,7 @@ impl From<bool> for Ignored {
 #[derive(Debug, Clone, Copy)]
 pub enum SinkType {
     DynamoPut,
-    Unknown
+    Unknown,
 }
 
 /// An attribute attaches metadata to an item.

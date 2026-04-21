@@ -634,7 +634,7 @@ impl<'genv, 'tcx> GlobalEnv<'genv, 'tcx> {
     /// explicit `#[flux::source]` annotation and return whether that item is a source or not.
     /// If no explicit annotation is found, return `false`.
     pub fn is_source(self, def_id: LocalDefId) -> bool {
-        self.traverse_parents_until(def_id, |did| self.fhir_attr_map(did).source())
+        self.fhir_attr_map(def_id).source()
     }
 
     /// Transitively follow the parent-chain of `def_id` to find the first containing item with an
