@@ -747,6 +747,10 @@ where
             if let rty::BoundVariableKind::Refine(sort, _, reft_kind) = var_kind
                 && !sort.is_param()
                 && !sort.is_loc()
+                && !matches!(
+                    sort,
+                    rty::Sort::Alias(rty::AliasKind::Opaque | rty::AliasKind::Projection, ..)
+                )
             // && !sort.is_unit()
             // && !sort.is_unit_adt().is_some()
             {
