@@ -85,11 +85,7 @@ impl FluxCallbacks {
         GlobalEnv::enter(tcx, &sess, Box::new(cstore), &arena, providers, |genv| {
             let result = metrics::time_it(TimingKind::Total, || check_crate(genv));
             if result.is_ok() {
-                let _ = flux_common::bug::catch_bugs_unconditional(
-                    "encode_metadata",
-                    AssertUnwindSafe(|| encode_and_save_metadata(genv)),
-                );
-                // encode_and_save_metadata(genv);
+                encode_and_save_metadata(genv);
             }
             lean_encoding::finalize(genv).unwrap_or(());
         });
@@ -139,11 +135,7 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
 
         for local_def_id in genv.tcx().iter_local_def_id() {
             let def_id = genv.maybe_extern_id(local_def_id);
-            use std::panic::AssertUnwindSafe;
-            let _ = flux_common::bug::catch_bugs_unconditional(
-                "",
-                AssertUnwindSafe(|| trigger_queries(genv, def_id)),
-            );
+            let _ = trigger_queries(genv, def_id);
         }
 
         for source in sources.iter() {
@@ -158,8 +150,6 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
 
                 paths_to_check.extend(paths);
             }
-
-            println!("{paths_to_check:?}");
 
             let def_ids_to_check =
                 paths_to_check
@@ -191,6 +181,10 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
             let _ = all_to_check
                 .into_iter()
                 .try_for_each_exhaust(|def_id| ck.check_def_catching_bugs(def_id));
+
+            // for (did, task) in ck.def_id_to_cstr_map.iter() {
+            //     println!("CHECKED {did:?}:\n {task}");
+            // }
 
             let mut tasks = ck.def_id_to_cstr_map.drain().map(|(_, t)| t);
 
@@ -246,7 +240,7 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                     mega_task.constraint = fixpoint::Constraint::Conj(vec![existing, consumer]);
                 }
 
-                println!("{mega_task:?}");
+                // println!("{}", mega_task);
 
                 let verification_result = mega_task
                     .run()
@@ -268,9 +262,12 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                         let sol = kvar_solutions.get(&kvid).unwrap_or_else(|| {
                             bug!("Sink KVar had no solution in mono constraint")
                         });
+
                         let res = base_fcx.fixpoint_to_solution(sol);
+                        println!("SOL is: {res:?}");
                         let kvar_sort = res.vars()[0].expect_sort().clone();
                         let disjuncts = res.skip_binder_ref().to_dnf();
+                        println!("disjuncts are: {disjuncts:?}");
 
                         let mut constraints = Vec::new();
 
@@ -280,6 +277,8 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                             .map(|d| d.simplify(&SnapshotMap::default()))
                             .filter(|d| !d.is_trivially_false())
                             .collect();
+
+                        println!("Simplified disjuncts are {:?}", disjuncts);
 
                         let mut fresh_kvids = Vec::new();
                         for _ in disjuncts.iter() {
@@ -395,6 +394,8 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                             task.add_cut_kvar(fixpoint_kvid);
                         }
 
+                        println!("{task}");
+
                         let verification_result = task.run().unwrap_or_else(|err| {
                             tracked_span_bug!("failed to run fixpoint: {err}")
                         });
@@ -408,6 +409,7 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                             let res = base_fcx.fixpoint_to_solution(sol);
                             solutions.push((*kvar_id, res));
                         }
+
                         if !solutions.is_empty() {
                             let sink_for = genv.sink_for(*sink_def_id);
                             println!("SOLUTION FOR {:?}", source);
@@ -574,10 +576,10 @@ impl<'genv, 'tcx> CrateChecker<'genv, 'tcx> {
     }
 
     fn check_def_catching_bugs(&mut self, def_id: LocalDefId) -> Result<(), ErrorGuaranteed> {
+        println!("CHECKING {def_id:?}");
         let mut this = std::panic::AssertUnwindSafe(self);
         let msg = format!("def_id: {:?}, span: {:?}", def_id, this.genv.tcx().def_span(def_id));
-        flux_common::bug::catch_bugs_unconditional(&msg, move || this.check_def(def_id));
-        Ok(())
+        flux_common::bug::catch_bugs(&msg, move || this.check_def(def_id))?
     }
 
     fn check_def(&mut self, def_id: LocalDefId) -> Result<(), ErrorGuaranteed> {
@@ -586,6 +588,7 @@ impl<'genv, 'tcx> CrateChecker<'genv, 'tcx> {
 
         // Dummy items generated for extern specs are excluded from metrics
         if genv.is_dummy(def_id.local_id()) {
+            println!("EXIT IS DUMMY");
             return Ok(());
         }
 

@@ -135,26 +135,3 @@ pub fn catch_bugs<R>(msg: &str, f: impl FnOnce() -> R + UnwindSafe) -> Result<R,
         Ok(f())
     }
 }
-
-pub fn catch_bugs_unconditional<R>(msg: &str, f: impl FnOnce() -> R + UnwindSafe) -> Option<R> {
-    match std::panic::catch_unwind(f) {
-        Ok(v) => Some(v),
-        Err(payload) => {
-            tls::with_opt(move |tcx| {
-                let Some(_tcx) = tcx else { std::panic::resume_unwind(payload) };
-                if payload.is::<ExplicitBug>() {
-                    eprintln!("note: bug caught [{msg}]\n");
-                    tls::with_opt(|tcx| {
-                        if let Some(tcx) = tcx {
-                            tcx.dcx().reset_err_count();
-                        }
-                    });
-                    None
-                } else {
-                    eprintln!("note: uncaught panic [{msg}]\n");
-                    std::panic::resume_unwind(payload)
-                }
-            })
-        }
-    }
-}

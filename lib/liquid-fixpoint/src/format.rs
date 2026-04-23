@@ -253,7 +253,7 @@ impl<T: Types> fmt::Display for SortCtor<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SortCtor::Set => write!(f, "Set_Set"),
-            SortCtor::Map => write!(f, "Map_t"),
+            SortCtor::Map => write!(f, "Array_t"),
             SortCtor::Data(name) => write!(f, "{}", name.display()),
         }
     }

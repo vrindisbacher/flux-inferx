@@ -2526,10 +2526,12 @@ fn parse_kvid(kvid: &str) -> fixpoint::KVid {
 }
 
 fn parse_local_var(name: &str) -> Option<fixpoint::Var> {
-    if let Some(rest) = name.strip_prefix('a')
-        && let Ok(idx) = rest.parse::<u32>()
-    {
-        return Some(fixpoint::Var::Local(fixpoint::LocalVar::from(idx)));
+    if let Some(rest) = name.strip_prefix('a') {
+        // Fixpoint may append #N scope suffixes when merging constraints
+        let rest = rest.split('#').next().unwrap_or(rest);
+        if let Ok(idx) = rest.parse::<u32>() {
+            return Some(fixpoint::Var::Local(fixpoint::LocalVar::from(idx)));
+        }
     }
     None
 }

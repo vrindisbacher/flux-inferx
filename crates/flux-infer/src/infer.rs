@@ -301,12 +301,12 @@ impl<'genv, 'tcx> InferCtxtRoot<'genv, 'tcx> {
         let cstr = refine_tree.to_fixpoint(&mut fcx)?;
 
         // skip checking trivial constraints
-        let count = cstr.concrete_head_count();
-        metrics::incr_metric(Metric::CsTotal, count as u32);
-        if count == 0 {
-            metrics::incr_metric_if(kind.is_body(), Metric::FnTrivial);
-            return Ok(Answer::trivial());
-        }
+        // let count = cstr.concrete_head_count();
+        // metrics::incr_metric(Metric::CsTotal, count as u32);
+        // if count == 0 {
+        //     metrics::incr_metric_if(kind.is_body(), Metric::FnTrivial);
+        //     return Ok(Answer::trivial());
+        // }
 
         let task = fcx.create_task(def_id, cstr, self.opts.scrape_quals, backend)?;
 

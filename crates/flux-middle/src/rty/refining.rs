@@ -783,12 +783,12 @@ fn make_kvar(
     self_args: Vec<(rty::Var, rty::Sort)>,
     params: Vec<(rty::Var, rty::Sort)>,
 ) -> rty::KVar {
-    let num_self_args = self_args.len();
+    // let num_self_args = self_args.len();
     let (args, sorts): (Vec<rty::Var>, Vec<rty::Sort>) =
         self_args.into_iter().chain(params.into_iter()).unzip();
     //VR(TODO): I don't quite understand why this was self_args.len() originally but anyhow I think in our
     // case we always want every param to be an argument of the kvar
-    // let num_self_args = args.len();
+    let num_self_args = args.len();
 
     let arg_exprs = args.into_iter().map(|var| rty::Expr::var(var)).collect();
     kvar_map.insert(kvid.as_u32(), KvarInfo { sorts, self_args: num_self_args });
