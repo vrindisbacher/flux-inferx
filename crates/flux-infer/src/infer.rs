@@ -21,6 +21,7 @@ use flux_middle::{
 };
 use itertools::{Itertools, izip};
 use liquid_fixpoint::Task;
+use rustc_data_structures::fx::FxIndexMap;
 use rustc_hir::def_id::{DefId, LocalDefId};
 use rustc_macros::extension;
 use rustc_middle::{
@@ -261,8 +262,8 @@ impl<'genv, 'tcx> InferCtxtRoot<'genv, 'tcx> {
         cache: &mut FixQueryCache,
         def_id: MaybeExternId,
         kind: FixpointQueryKind,
-        def_id_to_cstr: &mut HashMap<DefId, Task<FixpointTypes>>,
-        def_id_to_fixpoint_cstr: &mut HashMap<DefId, FixpointCtxt<'genv, 'tcx, Tag>>,
+        def_id_to_cstr: &mut FxIndexMap<DefId, Task<FixpointTypes>>,
+        def_id_to_fixpoint_cstr: &mut FxIndexMap<DefId, FixpointCtxt<'genv, 'tcx, Tag>>,
     ) -> QueryResult<Answer<Tag>> {
         let inner = self.inner.into_inner();
         let mut kvars = inner.kvars;

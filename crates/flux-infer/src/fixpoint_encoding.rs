@@ -254,8 +254,8 @@ impl SolutionTrace {
 
 pub struct ParsedResult {
     pub status: FixpointStatus<TagIdx>,
-    pub solution: HashMap<fixpoint::KVid, FixpointSolution>,
-    pub non_cut_solution: HashMap<fixpoint::KVid, FixpointSolution>,
+    pub solution: FxIndexMap<fixpoint::KVid, FixpointSolution>,
+    pub non_cut_solution: FxIndexMap<fixpoint::KVid, FixpointSolution>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -303,7 +303,7 @@ pub struct SortEncodingCtxt<'genv, 'tcx> {
     /// Set of all the tuple arities that need to be defined
     tuples: UnordSet<usize>,
     /// Saving all fixpoint data decls
-    adt_sorts: HashMap<DefId, usize>,
+    adt_sorts: FxIndexMap<DefId, usize>,
     /// Set of all opaque types that need to be defined
     opaque_sorts: FxIndexSet<FluxDefId>,
     genv: GlobalEnv<'genv, 'tcx>,
@@ -722,8 +722,8 @@ where
         } else {
             Ok(ParsedResult {
                 status: result.status,
-                solution: HashMap::default(),
-                non_cut_solution: HashMap::default(),
+                solution: FxIndexMap::default(),
+                non_cut_solution: FxIndexMap::default(),
             })
         }
     }
@@ -765,7 +765,7 @@ where
     pub fn parse_kvar_solutions(
         &mut self,
         kvar_binds: &[KVarBind],
-    ) -> HashMap<fixpoint::KVid, FixpointSolution> {
+    ) -> FxIndexMap<fixpoint::KVid, FixpointSolution> {
         kvar_binds
             .iter()
             .map(|b| (parse_kvid(&b.kvar), self.parse_kvar_solution(&b.val)))
@@ -1339,7 +1339,7 @@ impl LocalVarEnv {
 }
 
 pub struct KVarGen {
-    pub kvars: HashMap<rty::KVid, KVarDecl>,
+    pub kvars: FxIndexMap<rty::KVid, KVarDecl>,
     /// If true, generate dummy [holes] instead of kvars. Used during shape mode to avoid generating
     /// unnecessary kvars.
     ///
@@ -1349,7 +1349,7 @@ pub struct KVarGen {
 
 impl KVarGen {
     pub fn new(dummy: bool) -> Self {
-        Self { kvars: HashMap::new(), dummy }
+        Self { kvars: FxIndexMap::default(), dummy }
     }
 
     fn get(&self, kvid: &rty::KVid) -> Option<&KVarDecl> {
@@ -1550,8 +1550,8 @@ pub struct KVarSolutions {
 impl KVarSolutions {
     pub(crate) fn closed_solutions(
         variable_sorts: HashMap<fixpoint::Var, fixpoint::Sort>,
-        cut_solutions: HashMap<fixpoint::KVid, FixpointSolution>,
-        non_cut_solutions: HashMap<fixpoint::KVid, FixpointSolution>,
+        cut_solutions: FxIndexMap<fixpoint::KVid, FixpointSolution>,
+        non_cut_solutions: FxIndexMap<fixpoint::KVid, FixpointSolution>,
     ) -> Self {
         let closed_cut_solutions = cut_solutions
             .into_iter()
@@ -1593,7 +1593,7 @@ impl KVarSolutions {
 pub struct SortDeps {
     pub opaque_sorts: Vec<(FluxDefId, fixpoint::SortDecl)>,
     pub data_decls: Vec<fixpoint::DataDecl>,
-    pub adt_map: HashMap<DefId, usize>,
+    pub adt_map: FxIndexMap<DefId, usize>,
 }
 
 pub struct ConstDeps {

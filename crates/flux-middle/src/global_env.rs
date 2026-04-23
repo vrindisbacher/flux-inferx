@@ -7,7 +7,7 @@ use flux_cont::CallGraph;
 use flux_errors::FluxSession;
 use flux_rustc_bridge::{self, lowering::Lower, mir, ty};
 use flux_syntax::symbols::sym;
-use rustc_data_structures::unord::UnordSet;
+use rustc_data_structures::{fx::FxIndexMap, unord::UnordSet};
 use rustc_hir::{
     LangItem,
     def::DefKind,
@@ -40,7 +40,7 @@ pub struct KvarInfo {
     pub self_args: usize,
     pub sorts: Vec<rty::Sort>,
 }
-pub type KvarMap = HashMap<u32, KvarInfo>;
+pub type KvarMap = FxIndexMap<u32, KvarInfo>;
 
 #[derive(Clone, Copy)]
 pub struct GlobalEnv<'genv, 'tcx> {
@@ -56,7 +56,7 @@ struct GlobalEnvInner<'genv, 'tcx> {
     tempdir: TempDir,
     kvars: RefCell<KvarMap>,
     kvid: RefCell<rty::KVid>,
-    sink_kvars: RefCell<HashMap<DefId, KVar>>,
+    sink_kvars: RefCell<FxIndexMap<DefId, KVar>>,
 }
 
 impl<'tcx> GlobalEnv<'_, 'tcx> {

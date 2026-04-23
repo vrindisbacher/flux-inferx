@@ -8,6 +8,7 @@ use flux_rustc_bridge::{
     const_eval::{scalar_to_bits, scalar_to_int, scalar_to_uint},
     ty::{Const, ConstKind, ValTree, VariantIdx},
 };
+use hashbrown::HashSet;
 use itertools::Itertools;
 use liquid_fixpoint::ThyFunc;
 use rustc_abi::{FIRST_VARIANT, FieldIdx};
@@ -1987,31 +1988,54 @@ pub(crate) mod pretty {
 
 // TO DNF
 impl Expr {
+    fn filter_vec_expr(exprs: Vec<Expr>) -> Vec<Expr> {
+        let mut seen = HashSet::new();
+        for expr in exprs {
+            if !seen.contains(&expr) {
+                seen.insert(expr);
+            }
+        }
+        seen.into_iter().collect()
+    }
+
     /// Convert an expression to Disjunctive Normal Form (DNF).
     /// Returns a Vec of conjuncts — each element is one disjunct,
     /// represented as a conjunction (And) of literals.
     pub fn to_dnf(&self) -> Vec<Expr> {
-        match self.kind() {
-            ExprKind::BinaryOp(BinOp::Or, e1, e2) => {
-                let mut dnf1 = e1.to_dnf();
-                let mut dnf2 = e2.to_dnf();
-                dnf1.append(&mut dnf2);
-                dnf1
+        let res = match self.kind() {
+            ExprKind::ForAll(..) => {
+                bug!("Did not expect forall in dnf")
             }
-            ExprKind::BinaryOp(BinOp::And, e1, e2) => {
-                let dnf1 = e1.to_dnf();
-                let dnf2 = e2.to_dnf();
-                // Distribute: cross-product of the two sides
+            ExprKind::Exists(binder) => {
+                let body_dnf = binder.skip_binder_ref().to_dnf();
+                body_dnf
+                    .into_iter()
+                    .map(move |disjunct| {
+                        Expr::exists(Binder::bind_with_vars(disjunct, binder.vars().clone()))
+                    })
+                    .collect()
+            }
+            ExprKind::BinaryOp(BinOp::Or, expr1, expr2) => {
+                let mut e1_dnf = expr1.to_dnf();
+                let mut e2_dnf = expr2.to_dnf();
+                e1_dnf.append(&mut e2_dnf);
+                e1_dnf
+            }
+            ExprKind::BinaryOp(BinOp::And, expr1, expr2) => {
+                // distribute and over expr1 and expr2
+                let dnf1 = expr1.to_dnf();
+                let dnf2 = expr2.to_dnf();
                 let mut result = Vec::new();
-                for c1 in &dnf1 {
-                    for c2 in &dnf2 {
+                for c1 in dnf1.iter() {
+                    for c2 in dnf2.iter() {
                         result.push(Expr::and(c1.clone(), c2.clone()));
                     }
                 }
                 result
             }
-            ExprKind::UnaryOp(UnOp::Not, inner) => {
-                match inner.kind() {
+            ExprKind::UnaryOp(UnOp::Not, e) => {
+                match e.kind() {
+                    ExprKind::Exists(..) => bug!("Cannot distribute not over exists in DNF"),
                     // ¬(a ∧ b) => ¬a ∨ ¬b
                     ExprKind::BinaryOp(BinOp::And, e1, e2) => Expr::or(e1.not(), e2.not()).to_dnf(),
                     // ¬(a ∨ b) => ¬a ∧ ¬b
@@ -2022,62 +2046,8 @@ impl Expr {
                     _ => vec![self.clone()],
                 }
             }
-            // Existentials: recurse into the body, wrap each disjunct back in ∃
-            ExprKind::Exists(binder) => {
-                let body = binder.skip_binder_ref();
-                let body_dnf = body.to_dnf();
-                body_dnf
-                    .into_iter()
-                    .map(|disjunct| {
-                        Expr::exists(Binder::bind_with_vars(disjunct, binder.vars().clone()))
-                    })
-                    .collect()
-            }
-            // Everything else is a literal/atom
             _ => vec![self.clone()],
-        }
-    }
-
-    /// Collect the conjuncts from a single DNF disjunct into a flat Vec.
-    /// Assumes the expression is a conjunction (no top-level Or).
-    pub fn flatten_conj_owned(self) -> Vec<Expr> {
-        match self.kind() {
-            ExprKind::BinaryOp(BinOp::And, e1, e2) => {
-                let mut v = e1.clone().flatten_conj_owned();
-                v.append(&mut e2.clone().flatten_conj_owned());
-                v
-            }
-            _ => vec![self],
-        }
-    }
-
-    /// Given a disjunct from the DNF of a kvar solution, produce a constraint
-    /// of the form: forall builder. disjunct => $k_i(builder)
-    ///
-    /// `disjunct` should come from `skip_binder` on the original kvar solution,
-    /// so it has a dangling debruijn index at level 0 for the kvar argument.
-    /// We re-bind it in the new forall.
-    pub fn make_path_constraint(
-        self,
-        fresh_kvid: KVid,
-        kvar_sort: Sort,
-        kvar_bound_var_kind: BoundReftKind,
-    ) -> Expr {
-        // The kvar argument variable — bound at INNERMOST in the new forall
-        let builder_var = Expr::bvar(INNERMOST, BoundVar::ZERO, kvar_bound_var_kind);
-
-        // Build the kvar application: $k_i(builder)
-        let kvar = Expr::kvar(KVar::new(fresh_kvid, 1, vec![builder_var]));
-
-        // Build: disjunct => $k_i(builder)
-        let body = Expr::implies(self, kvar);
-
-        // Wrap in forall, binding the builder variable
-        let vars = List::from_vec(vec![BoundVariableKind::Refine(
-            kvar_sort,
-            InferMode::KVar,
-            BoundReftKind::Anon,
-        )]);
-        Expr::forall(Binder::bind_with_vars(body, vars))
+        };
+        Expr::filter_vec_expr(res)
     }
 }

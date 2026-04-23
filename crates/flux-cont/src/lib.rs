@@ -1,10 +1,12 @@
 #![feature(rustc_private)]
+extern crate rustc_data_structures;
 extern crate rustc_hir;
 extern crate rustc_infer;
 extern crate rustc_middle;
 extern crate rustc_trait_selection;
 
 use flux_rustc_bridge::lowering::resolve_call_query;
+use rustc_data_structures::fx::FxIndexMap;
 use rustc_hash::{FxHashMap, FxHashSet};
 use rustc_hir::{def::DefKind, def_id::DefId};
 use rustc_infer::infer::TyCtxtInferExt;
@@ -16,12 +18,12 @@ use rustc_trait_selection::traits::SelectionContext;
 
 #[derive(Debug, Clone)]
 pub struct CallGraph {
-    pub inner: FxHashMap<DefId, Vec<DefId>>,
+    pub inner: FxIndexMap<DefId, Vec<DefId>>,
 }
 
 impl CallGraph {
     pub fn new() -> Self {
-        Self { inner: FxHashMap::default() }
+        Self { inner: FxIndexMap::default() }
     }
 
     pub fn insert(&mut self, k: DefId, v: Vec<DefId>) -> Option<Vec<DefId>> {

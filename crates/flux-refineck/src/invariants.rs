@@ -16,6 +16,7 @@ use flux_middle::{
     rty::{self},
 };
 use liquid_fixpoint::Task;
+use rustc_data_structures::fx::FxIndexMap;
 use rustc_hir::def_id::DefId;
 use rustc_infer::infer::TyCtxtInferExt;
 use rustc_middle::ty::TypingMode;
@@ -27,8 +28,8 @@ pub fn check_invariants<'genv, 'tcx>(
     def_id: MaybeExternId,
     invariants: &[fhir::Expr],
     adt_def: &rty::AdtDef,
-    def_id_to_cstr: &mut HashMap<DefId, Task<FixpointTypes>>,
-    def_id_to_fixpoint_ctx: &mut HashMap<DefId, FixpointCtxt<'genv, 'tcx, Tag>>,
+    def_id_to_cstr: &mut FxIndexMap<DefId, Task<FixpointTypes>>,
+    def_id_to_fixpoint_ctx: &mut FxIndexMap<DefId, FixpointCtxt<'genv, 'tcx, Tag>>,
 ) -> Result<(), ErrorGuaranteed> {
     // FIXME(nilehmann) maybe we should record whether the invariants were generated with overflow
     // checking enabled and only assume them in code that also overflow checking enabled.
@@ -67,8 +68,8 @@ fn check_invariant<'genv, 'tcx>(
     span: Span,
     invariant: &rty::Invariant,
     opts: InferOpts,
-    def_id_to_cstr: &mut HashMap<DefId, Task<FixpointTypes>>,
-    def_id_to_fixpoint_ctx: &mut HashMap<DefId, FixpointCtxt<'genv, 'tcx, Tag>>,
+    def_id_to_cstr: &mut FxIndexMap<DefId, Task<FixpointTypes>>,
+    def_id_to_fixpoint_ctx: &mut FxIndexMap<DefId, FixpointCtxt<'genv, 'tcx, Tag>>,
 ) -> Result<(), ErrorGuaranteed> {
     let resolved_id = def_id.resolved_id();
 

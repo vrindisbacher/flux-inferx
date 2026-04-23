@@ -47,7 +47,7 @@ use flux_middle::{
     rty::{self, ESpan},
 };
 use liquid_fixpoint::Task;
-use rustc_data_structures::unord::UnordMap;
+use rustc_data_structures::{fx::FxIndexMap, unord::UnordMap};
 use rustc_errors::ErrorGuaranteed;
 use rustc_hir::def_id::{DefId, LocalDefId};
 use rustc_span::Span;
@@ -74,8 +74,8 @@ fn check_body<'genv, 'tcx>(
     cache: &mut FixQueryCache,
     def_id: LocalDefId,
     poly_sig: &rty::PolyFnSig,
-    def_id_to_cstr: &mut HashMap<DefId, Task<FixpointTypes>>,
-    def_id_to_fixpoint_ctx: &mut HashMap<DefId, FixpointCtxt<'genv, 'tcx, Tag>>,
+    def_id_to_cstr: &mut FxIndexMap<DefId, Task<FixpointTypes>>,
+    def_id_to_fixpoint_ctx: &mut FxIndexMap<DefId, FixpointCtxt<'genv, 'tcx, Tag>>,
 ) -> Result<(), ErrorGuaranteed> {
     let span = genv.tcx().def_span(def_id);
     let opts = genv.infer_opts(def_id);
@@ -135,8 +135,8 @@ pub fn check_static<'genv, 'tcx>(
     cache: &mut FixQueryCache,
     def_id: LocalDefId,
     ty: rty::Ty,
-    def_id_to_cstr: &mut HashMap<DefId, Task<FixpointTypes>>,
-    def_id_to_fixpoint_ctx: &mut HashMap<DefId, FixpointCtxt<'genv, 'tcx, Tag>>,
+    def_id_to_cstr: &mut FxIndexMap<DefId, Task<FixpointTypes>>,
+    def_id_to_fixpoint_ctx: &mut FxIndexMap<DefId, FixpointCtxt<'genv, 'tcx, Tag>>,
 ) -> Result<(), ErrorGuaranteed> {
     // Build a PolyFnSig with no inputs and `ty` as the output
     let output = rty::Binder::dummy(rty::FnOutput::new(ty, vec![]));
@@ -161,8 +161,8 @@ pub fn check_fn<'genv, 'tcx>(
     genv: GlobalEnv<'genv, 'tcx>,
     cache: &mut FixQueryCache,
     def_id: LocalDefId,
-    def_id_to_cstr: &mut HashMap<DefId, Task<FixpointTypes>>,
-    def_id_to_fixpoint_ctx: &mut HashMap<DefId, FixpointCtxt<'genv, 'tcx, Tag>>,
+    def_id_to_cstr: &mut FxIndexMap<DefId, Task<FixpointTypes>>,
+    def_id_to_fixpoint_ctx: &mut FxIndexMap<DefId, FixpointCtxt<'genv, 'tcx, Tag>>,
 ) -> Result<(), ErrorGuaranteed> {
     let span = genv.tcx().def_span(def_id);
 

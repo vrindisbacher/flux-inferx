@@ -1,8 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    panic::AssertUnwindSafe,
-    path::Path,
-};
+use std::{collections::HashMap, path::Path};
 
 use flux_common::{bug, cache::QueryCache, iter::IterExt, result::ResultExt, tracked_span_bug};
 use flux_config::{self as config};
@@ -23,11 +19,14 @@ use flux_middle::{
     global_env::GlobalEnv,
     metrics::{self, Metric, TimingKind},
     queries::{Providers, QueryResult},
-    rty::StaticInfo,
+    rty::{StaticInfo, fold::TypeFoldable},
 };
 use flux_refineck as refineck;
 use rustc_borrowck::consumers::ConsumerOptions;
-use rustc_data_structures::snapshot_map::SnapshotMap;
+use rustc_data_structures::{
+    fx::{FxIndexMap, FxIndexSet},
+    snapshot_map::SnapshotMap,
+};
 use rustc_driver::{Callbacks, Compilation};
 use rustc_errors::ErrorGuaranteed;
 use rustc_hir::{
@@ -103,20 +102,21 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
 
         let mut ck = CrateChecker::new(genv);
 
-        let (sources, mut sinks) = genv.tcx().iter_local_def_id().fold(
-            (Vec::new(), Vec::new()),
-            |(mut sources, mut sinks), local_def_id| {
-                if genv.tcx().def_kind(local_def_id).is_fn_like() {
-                    if genv.is_source(local_def_id) {
-                        sources.push(local_def_id.to_def_id());
+        let (sources, mut sinks): (FxIndexSet<DefId>, FxIndexSet<DefId>) =
+            genv.tcx().iter_local_def_id().fold(
+                (FxIndexSet::default(), FxIndexSet::default()),
+                |(mut sources, mut sinks), local_def_id| {
+                    if genv.tcx().def_kind(local_def_id).is_fn_like() {
+                        if genv.is_source(local_def_id) {
+                            sources.insert(local_def_id.to_def_id());
+                        }
+                        if genv.is_sink(local_def_id) {
+                            sinks.insert(local_def_id.to_def_id());
+                        }
                     }
-                    if genv.is_sink(local_def_id) {
-                        sinks.push(local_def_id.to_def_id());
-                    }
-                }
-                (sources, sinks)
-            },
-        );
+                    (sources, sinks)
+                },
+            );
 
         let mut source_call_graph = flux_cont::CallGraph::new();
         for source in sources.iter() {
@@ -128,7 +128,7 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
         for (_def_id, callees) in &source_call_graph.inner {
             for callee in callees {
                 if genv.is_sink(callee) {
-                    sinks.push(*callee);
+                    sinks.insert(*callee);
                 }
             }
         }
@@ -139,15 +139,10 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
         }
 
         for source in sources.iter() {
-            let source_call_graph = genv
-                .call_graph(source)
-                .expect("Could not create call graph");
-
             let mut paths_to_check = Vec::new();
 
             for sink in sinks.iter() {
                 let paths = source_call_graph.get_all_paths_from_to(*source, *sink);
-
                 paths_to_check.extend(paths);
             }
 
@@ -155,7 +150,7 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                 paths_to_check
                     .iter()
                     .flatten()
-                    .fold(HashSet::new(), |mut acc, def_id| {
+                    .fold(FxIndexSet::default(), |mut acc, def_id| {
                         match def_id.as_local() {
                             Some(local) => {
                                 acc.insert(local);
@@ -169,7 +164,7 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
             let all_def_ids: Vec<DefId> = def_ids_to_check.iter().map(|l| l.to_def_id()).collect();
             let additional_callees = source_call_graph.transitive_callees(&all_def_ids);
 
-            let all_to_check: HashSet<LocalDefId> = def_ids_to_check
+            let all_to_check: FxIndexSet<LocalDefId> = def_ids_to_check
                 .into_iter()
                 .chain(
                     additional_callees
@@ -182,11 +177,7 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                 .into_iter()
                 .try_for_each_exhaust(|def_id| ck.check_def_catching_bugs(def_id));
 
-            // for (did, task) in ck.def_id_to_cstr_map.iter() {
-            //     println!("CHECKED {did:?}:\n {task}");
-            // }
-
-            let mut tasks = ck.def_id_to_cstr_map.drain().map(|(_, t)| t);
+            let mut tasks = ck.def_id_to_cstr_map.clone().into_iter().map(|(_, t)| t);
 
             if let Some(mut mega_task) = tasks.next() {
                 for task in tasks {
@@ -240,13 +231,15 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                     mega_task.constraint = fixpoint::Constraint::Conj(vec![existing, consumer]);
                 }
 
-                // println!("{}", mega_task);
+                // println!("{mega_task}");
 
                 let verification_result = mega_task
                     .run()
                     .unwrap_or_else(|err| tracked_span_bug!("failed to run fixpoint: {err}"));
 
-                let mut ctxs = ck.def_id_to_fixpoint_ctx.drain().map(|(_, c)| c);
+                let map_len = ck.def_id_to_cstr_map.len();
+                let mut ctxs = ck.def_id_to_fixpoint_ctx.drain(0..map_len).map(|(_, c)| c);
+
                 if let Some(mut base_fcx) = ctxs.next() {
                     for ctx in ctxs {
                         base_fcx.merge(ctx);
@@ -262,12 +255,16 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                         let sol = kvar_solutions.get(&kvid).unwrap_or_else(|| {
                             bug!("Sink KVar had no solution in mono constraint")
                         });
+                        println!("THE FULL SOLUTION FOR NON CUT IS {sol:?}");
 
                         let res = base_fcx.fixpoint_to_solution(sol);
-                        println!("SOL is: {res:?}");
                         let kvar_sort = res.vars()[0].expect_sort().clone();
-                        let disjuncts = res.skip_binder_ref().to_dnf();
-                        println!("disjuncts are: {disjuncts:?}");
+                        let simplified_sol = res
+                            .skip_binder_ref()
+                            .simplify(&SnapshotMap::default())
+                            .normalize(genv);
+                        println!("THE SIMPLD SOLUTION FOR NON CUT IS {simplified_sol:?}");
+                        let disjuncts = simplified_sol.to_dnf();
 
                         let mut constraints = Vec::new();
 
@@ -277,8 +274,6 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                             .map(|d| d.simplify(&SnapshotMap::default()))
                             .filter(|d| !d.is_trivially_false())
                             .collect();
-
-                        println!("Simplified disjuncts are {:?}", disjuncts);
 
                         let mut fresh_kvids = Vec::new();
                         for _ in disjuncts.iter() {
@@ -491,8 +486,8 @@ fn encode_and_save_metadata(genv: GlobalEnv) {
 struct CrateChecker<'genv, 'tcx> {
     genv: GlobalEnv<'genv, 'tcx>,
     cache: FixQueryCache,
-    def_id_to_cstr_map: HashMap<DefId, Task>,
-    def_id_to_fixpoint_ctx: HashMap<DefId, FixpointCtxt<'genv, 'tcx, Tag>>,
+    def_id_to_cstr_map: FxIndexMap<DefId, Task>,
+    def_id_to_fixpoint_ctx: FxIndexMap<DefId, FixpointCtxt<'genv, 'tcx, Tag>>,
 }
 
 impl<'genv, 'tcx> CrateChecker<'genv, 'tcx> {
@@ -500,8 +495,8 @@ impl<'genv, 'tcx> CrateChecker<'genv, 'tcx> {
         Self {
             genv,
             cache: QueryCache::load(),
-            def_id_to_cstr_map: HashMap::new(),
-            def_id_to_fixpoint_ctx: HashMap::new(),
+            def_id_to_cstr_map: FxIndexMap::default(),
+            def_id_to_fixpoint_ctx: FxIndexMap::default(),
         }
     }
 
@@ -576,13 +571,13 @@ impl<'genv, 'tcx> CrateChecker<'genv, 'tcx> {
     }
 
     fn check_def_catching_bugs(&mut self, def_id: LocalDefId) -> Result<(), ErrorGuaranteed> {
-        println!("CHECKING {def_id:?}");
         let mut this = std::panic::AssertUnwindSafe(self);
         let msg = format!("def_id: {:?}, span: {:?}", def_id, this.genv.tcx().def_span(def_id));
         flux_common::bug::catch_bugs(&msg, move || this.check_def(def_id))?
     }
 
     fn check_def(&mut self, def_id: LocalDefId) -> Result<(), ErrorGuaranteed> {
+        println!("CHECKING {def_id:?}");
         let genv = self.genv;
         let def_id = genv.maybe_extern_id(def_id);
 

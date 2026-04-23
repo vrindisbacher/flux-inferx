@@ -16,11 +16,11 @@ use flux_attrs::*;
 #[extern_spec(std::collections)]
 struct HashMap<K, V, S = RandomState>;
 
-#[extern_spec]
-impl<K, V, S> HashMap<K, V, S> {
-    #[sig(fn(self: &strg HashMap<K,V, S>[@m], k: K, v: V) -> Option<V> ensures self: HashMap<K,V, S>[map_set(m.vals, k, v)])]
-    fn insert(&mut self, k: K, v: V) -> Option<V>
-    where
-        K: Eq + Hash,
-        S: BuildHasher;
-}
+// #[extern_spec]
+// impl<K, V, S> HashMap<K, V, S> {
+//     #[sig(fn(self: &strg HashMap<K,V, S>[@m], k: K, v: V) -> Option<V> ensures self: HashMap<K,V, S>[map_set(m.vals, k, v)])]
+//     fn insert(&mut self, k: K, v: V) -> Option<V>
+//     where
+//         K: Eq + Hash,
+//         S: BuildHasher;
+// }
