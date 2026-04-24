@@ -614,7 +614,12 @@ impl From<bool> for Ignored {
 
 #[derive(Debug, Clone, Copy)]
 pub enum SinkType {
+    // Dynamo Operations
     DynamoPut,
+    // S3 Operations
+    S3PutObject,
+    S3GetObject,
+    S3DeleteObject,
     Unknown,
 }
 

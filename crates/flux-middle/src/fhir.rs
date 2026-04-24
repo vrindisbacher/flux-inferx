@@ -49,7 +49,12 @@ use crate::{
 
 #[derive(Debug, Clone, Copy, Encodable, Decodable)]
 pub enum SinkType {
+    // Dynamo Operations
     DynamoPut,
+    // S3 Operations
+    S3PutObject,
+    S3GetObject,
+    S3DeleteObject,
     Unknown,
 }
 
@@ -58,6 +63,9 @@ impl Into<SinkType> for flux_syntax::surface::SinkType {
         match self {
             flux_syntax::surface::SinkType::DynamoPut => SinkType::DynamoPut,
             flux_syntax::surface::SinkType::Unknown => SinkType::Unknown,
+            flux_syntax::surface::SinkType::S3PutObject => SinkType::S3PutObject,
+            flux_syntax::surface::SinkType::S3GetObject => SinkType::S3GetObject,
+            flux_syntax::surface::SinkType::S3DeleteObject => SinkType::S3DeleteObject,
         }
     }
 }

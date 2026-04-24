@@ -10,11 +10,11 @@ use std::{
     hash::{BuildHasher, Hash, RandomState},
 };
 
-use flux_attrs::*;
-/// define a type indexed by a map
-#[refined_by(vals: Map<K, V>)]
-#[extern_spec(std::collections)]
-struct HashMap<K, V, S = RandomState>;
+// use flux_attrs::*;
+// /// define a type indexed by a map
+// #[refined_by(vals: Map<K, V>)]
+// #[extern_spec(std::collections)]
+// struct HashMap<K, V, S = RandomState>;
 
 // #[extern_spec]
 // impl<K, V, S> HashMap<K, V, S> {

@@ -588,7 +588,12 @@ impl<'a, 'tcx> SpecCollector<'a, 'tcx> {
             ("sink", hir::AttrArgs::Delimited(dargs)) => {
                 self.parse(dargs, ParseSess::parse_ident, |ident| {
                     match ident.as_str() {
+                        // Dynamo
                         "DynamoPut" => FluxAttrKind::Sink(SinkType::DynamoPut),
+                        // S3
+                        "S3GetObject" => FluxAttrKind::Sink(SinkType::S3GetObject),
+                        "S3PutObject" => FluxAttrKind::Sink(SinkType::S3PutObject),
+                        "S3DeleteObject" => FluxAttrKind::Sink(SinkType::S3DeleteObject),
                         _ => FluxAttrKind::Sink(SinkType::Unknown),
                     }
                 })?
@@ -712,7 +717,12 @@ struct FluxAttr {
 
 #[derive(Debug)]
 enum SinkType {
+    // Dynamo Operations
     DynamoPut,
+    // S3 Operations
+    S3PutObject,
+    S3GetObject,
+    S3DeleteObject,
     Unknown,
 }
 
@@ -721,6 +731,9 @@ impl Into<flux_syntax::surface::SinkType> for SinkType {
         match self {
             SinkType::DynamoPut => surface::SinkType::DynamoPut,
             SinkType::Unknown => surface::SinkType::Unknown,
+            SinkType::S3PutObject => surface::SinkType::S3PutObject,
+            SinkType::S3GetObject => surface::SinkType::S3GetObject,
+            SinkType::S3DeleteObject => surface::SinkType::S3DeleteObject,
         }
     }
 }

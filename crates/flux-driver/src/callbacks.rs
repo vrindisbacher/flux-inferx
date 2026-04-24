@@ -231,7 +231,7 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                     mega_task.constraint = fixpoint::Constraint::Conj(vec![existing, consumer]);
                 }
 
-                // println!("{mega_task}");
+                println!("{mega_task}");
 
                 let verification_result = mega_task
                     .run()
