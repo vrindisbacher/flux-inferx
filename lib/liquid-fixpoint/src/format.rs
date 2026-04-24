@@ -79,7 +79,6 @@ impl<T: Types> fmt::Display for Task<T> {
             "
             )?;
         }
-
         for kvar in &self.cut_kvars {
             writeln!(f, "(cut ${})", kvar.display())?;
         }

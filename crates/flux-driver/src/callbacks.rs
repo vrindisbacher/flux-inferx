@@ -231,7 +231,7 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                     mega_task.constraint = fixpoint::Constraint::Conj(vec![existing, consumer]);
                 }
 
-                println!("{mega_task}");
+                // println!("{mega_task}");
 
                 let verification_result = mega_task
                     .run()
@@ -255,7 +255,7 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                         let sol = kvar_solutions.get(&kvid).unwrap_or_else(|| {
                             bug!("Sink KVar had no solution in mono constraint")
                         });
-                        println!("THE FULL SOLUTION FOR NON CUT IS {sol:?}");
+                        // println!("THE FULL SOLUTION FOR NON CUT IS {sol:?}");
 
                         let res = base_fcx.fixpoint_to_solution(sol);
                         let kvar_sort = res.vars()[0].expect_sort().clone();
@@ -263,7 +263,7 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                             .skip_binder_ref()
                             .simplify(&SnapshotMap::default())
                             .normalize(genv);
-                        println!("THE SIMPLD SOLUTION FOR NON CUT IS {simplified_sol:?}");
+                        // println!("THE SIMPLD SOLUTION FOR NON CUT IS {simplified_sol:?}");
                         let disjuncts = simplified_sol.to_dnf();
 
                         let mut constraints = Vec::new();
@@ -389,7 +389,7 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                             task.add_cut_kvar(fixpoint_kvid);
                         }
 
-                        println!("{task}");
+                        // println!("{task}");
 
                         let verification_result = task.run().unwrap_or_else(|err| {
                             tracked_span_bug!("failed to run fixpoint: {err}")

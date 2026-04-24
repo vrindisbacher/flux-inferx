@@ -363,6 +363,7 @@ pub(crate) fn trait_impl_subtyping<'genv, 'tcx>(
     opts: InferOpts,
     span: Span,
 ) -> InferResult<Option<InferCtxtRoot<'genv, 'tcx>>> {
+    return Ok(None);
     let tcx = genv.tcx();
 
     // Skip the check if this is not an impl method

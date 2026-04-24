@@ -1177,7 +1177,8 @@ impl KVarEncodingCtxt {
             // this will be expanded to multiple kvars. This doesn't matter for the purposes
             // of inference, we just need to make sure that there are no name clashes so
             // we need to get new kvid id because kvids are generated from global state
-            let start = fixpoint::KVid::from_u32(genv.get_next_kvid().as_u32());
+            let kvid = genv.get_next_kvid().as_u32();
+            let start = fixpoint::KVid::from_u32(kvid);
             let n = usize::max(decl.self_args, 1);
             start..start + n
         };
