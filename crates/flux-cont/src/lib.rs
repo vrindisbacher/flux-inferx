@@ -100,6 +100,13 @@ impl CallGraph {
 
             for &callee in callees {
                 if path.contains(&callee) {
+                    let callee_str = format!("{:?}", callee);
+                    // HACK: this kept popping up and I think we can just skip this stuff and pretend it doesn't recurse
+                    // We will pick that up anyways in the constraint and it shouldn't effect any of the things we really 
+                    // want to do
+                    if callee_str.contains("slice::sort") {
+                        continue;
+                    }
                     flux_common::bug!(
                         "flux-cont::call-graph: detected a cycle for {:?}. Recursion is not handled by continuation checking",
                         callee

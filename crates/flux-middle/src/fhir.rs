@@ -47,10 +47,13 @@ use crate::{
     rty::QualifierKind,
 };
 
-#[derive(Debug, Clone, Copy, Encodable, Decodable)]
+#[derive(Debug, Clone, Copy, Encodable, Decodable, Hash, PartialEq, Eq)]
 pub enum SinkType {
     // Dynamo Operations
     DynamoPut,
+    DynamoGet,
+    DynamoDelete,
+    DynamoUpdate,
     // S3 Operations
     S3PutObject,
     S3GetObject,
@@ -62,6 +65,9 @@ impl Into<SinkType> for flux_syntax::surface::SinkType {
     fn into(self) -> SinkType {
         match self {
             flux_syntax::surface::SinkType::DynamoPut => SinkType::DynamoPut,
+            flux_syntax::surface::SinkType::DynamoGet => SinkType::DynamoGet,
+            flux_syntax::surface::SinkType::DynamoDelete => SinkType::DynamoDelete,
+            flux_syntax::surface::SinkType::DynamoUpdate => SinkType::DynamoUpdate,
             flux_syntax::surface::SinkType::Unknown => SinkType::Unknown,
             flux_syntax::surface::SinkType::S3PutObject => SinkType::S3PutObject,
             flux_syntax::surface::SinkType::S3GetObject => SinkType::S3GetObject,

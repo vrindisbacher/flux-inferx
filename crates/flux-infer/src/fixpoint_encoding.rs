@@ -693,6 +693,7 @@ where
             solver,
             data_decls: self.scx.encode_data_decls()?,
             cut_kvars: Vec::new(),
+            string_qualifiers: Vec::new()
         };
 
         if config::dump_constraint() {
@@ -728,7 +729,7 @@ where
         }
     }
 
-    pub(crate) fn result_to_answer(&mut self, result: ParsedResult) -> Answer<Tag> {
+    pub(crate) fn _result_to_answer(&mut self, result: ParsedResult) -> Answer<Tag> {
         let def_span = self.ecx.def_span();
         let errors = match result.status {
             FixpointStatus::Safe(_) => vec![],

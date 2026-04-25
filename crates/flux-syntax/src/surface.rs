@@ -616,6 +616,9 @@ impl From<bool> for Ignored {
 pub enum SinkType {
     // Dynamo Operations
     DynamoPut,
+    DynamoGet,
+    DynamoDelete,
+    DynamoUpdate,
     // S3 Operations
     S3PutObject,
     S3GetObject,

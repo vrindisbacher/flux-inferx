@@ -1,4 +1,4 @@
-use std::{alloc, cell::RefCell, collections::HashMap, path::PathBuf, ptr, rc::Rc, slice};
+use std::{alloc, cell::RefCell, path::PathBuf, ptr, rc::Rc, slice};
 
 use flux_arc_interner::List;
 use flux_common::{bug, result::ErrorEmitter};
@@ -685,24 +685,6 @@ impl<'genv, 'tcx> GlobalEnv<'genv, 'tcx> {
     /// Whether the function is marked with `#[proven_externally]`
     pub fn proven_externally(self, def_id: LocalDefId) -> Option<Span> {
         self.fhir_attr_map(def_id).proven_externally()
-    }
-
-    fn traverse_parents_until(
-        self,
-        mut def_id: LocalDefId,
-        mut f: impl FnMut(LocalDefId) -> bool,
-    ) -> bool {
-        loop {
-            if f(def_id) {
-                break true;
-            }
-
-            if let Some(parent) = self.tcx().opt_local_parent(def_id) {
-                def_id = parent;
-            } else {
-                break false;
-            }
-        }
     }
 
     /// Traverse the parent chain of `def_id` until the first node for which `f` returns [`Some`].

@@ -590,6 +590,9 @@ impl<'a, 'tcx> SpecCollector<'a, 'tcx> {
                     match ident.as_str() {
                         // Dynamo
                         "DynamoPut" => FluxAttrKind::Sink(SinkType::DynamoPut),
+                        "DynamoGet" => FluxAttrKind::Sink(SinkType::DynamoGet),
+                        "DynamoDelete" => FluxAttrKind::Sink(SinkType::DynamoDelete),
+                        "DynamoUpdate" => FluxAttrKind::Sink(SinkType::DynamoUpdate),
                         // S3
                         "S3GetObject" => FluxAttrKind::Sink(SinkType::S3GetObject),
                         "S3PutObject" => FluxAttrKind::Sink(SinkType::S3PutObject),
@@ -719,6 +722,9 @@ struct FluxAttr {
 enum SinkType {
     // Dynamo Operations
     DynamoPut,
+    DynamoGet,
+    DynamoDelete,
+    DynamoUpdate,
     // S3 Operations
     S3PutObject,
     S3GetObject,
@@ -730,6 +736,9 @@ impl Into<flux_syntax::surface::SinkType> for SinkType {
     fn into(self) -> flux_syntax::surface::SinkType {
         match self {
             SinkType::DynamoPut => surface::SinkType::DynamoPut,
+            SinkType::DynamoGet => surface::SinkType::DynamoGet,
+            SinkType::DynamoDelete => surface::SinkType::DynamoDelete,
+            SinkType::DynamoUpdate => surface::SinkType::DynamoUpdate,
             SinkType::Unknown => surface::SinkType::Unknown,
             SinkType::S3PutObject => surface::SinkType::S3PutObject,
             SinkType::S3GetObject => surface::SinkType::S3GetObject,

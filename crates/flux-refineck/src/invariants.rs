@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use flux_common::{iter::IterExt, result::ResultExt};
 use flux_config::InferOpts;
 use flux_errors::ErrorGuaranteed;

@@ -189,6 +189,7 @@ pub struct Task<T: Types> {
     pub scrape_quals: bool,
     pub solver: SmtSolver,
     pub cut_kvars: Vec<T::KVar>,
+    pub string_qualifiers: Vec<&'static str>
 }
 
 impl<T: Types> Task<T> {

@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, fmt, iter};
+use std::{cell::RefCell, fmt, iter};
 
 use flux_common::{bug, dbg, tracked_span_assert_eq, tracked_span_bug, tracked_span_dbg_assert_eq};
 use flux_config::{self as config, InferOpts, OverflowMode, RawDerefMode};
@@ -7,7 +7,6 @@ use flux_middle::{
     FixpointQueryKind,
     def_id::MaybeExternId,
     global_env::GlobalEnv,
-    metrics::{self, Metric},
     queries::{QueryErr, QueryResult},
     query_bug,
     rty::{
@@ -259,7 +258,7 @@ impl<'genv, 'tcx> InferCtxtRoot<'genv, 'tcx> {
 
     pub fn execute_fixpoint_query(
         self,
-        cache: &mut FixQueryCache,
+        _cache: &mut FixQueryCache,
         def_id: MaybeExternId,
         kind: FixpointQueryKind,
         def_id_to_cstr: &mut FxIndexMap<DefId, Task<FixpointTypes>>,

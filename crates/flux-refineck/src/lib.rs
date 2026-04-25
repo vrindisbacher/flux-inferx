@@ -29,8 +29,6 @@ mod primops;
 mod queue;
 mod type_env;
 
-use std::collections::HashMap;
-
 use checker::{Checker, trait_impl_subtyping};
 use flux_common::{dbg, dbg::SpanTrace, result::ResultExt as _};
 use flux_config as config;
