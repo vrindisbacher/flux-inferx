@@ -29,7 +29,7 @@ mod primops;
 mod queue;
 mod type_env;
 
-use checker::{Checker, trait_impl_subtyping};
+use checker::Checker;
 use flux_common::{dbg, dbg::SpanTrace, result::ResultExt as _};
 use flux_config as config;
 use flux_infer::{
@@ -173,27 +173,30 @@ pub fn check_fn<'genv, 'tcx>(
     //     return Ok(());
     // }
 
-    let opts = genv.infer_opts(def_id);
+    // NOTE(VR): We don't need to check trait impl subtyping since there are no specs
+    // on traits
 
-    // FIXME(nilehmann) we should move this check to `compare_impl_item`
-    if let Some(infcx_root) = trait_impl_subtyping(genv, def_id, opts, span)
-        .with_span(span)
-        .map_err(|err| err.emit(genv, def_id))?
-    {
-        tracing::info!("check_fn::refine-subtyping");
-        let answer = infcx_root
-            .execute_fixpoint_query(
-                cache,
-                MaybeExternId::Local(def_id),
-                FixpointQueryKind::Impl,
-                def_id_to_cstr,
-                def_id_to_fixpoint_ctx,
-            )
-            .emit(&genv)?;
-        tracing::info!("check_fn::fixpoint-subtyping");
-        let errors = answer.errors;
-        report_fixpoint_errors(genv, def_id, errors)?;
-    }
+    // let opts = genv.infer_opts(def_id);
+
+    // // FIXME(nilehmann) we should move this check to `compare_impl_item`
+    // if let Some(infcx_root) = trait_impl_subtyping(genv, def_id, opts, span)
+    //     .with_span(span)
+    //     .map_err(|err| err.emit(genv, def_id))?
+    // {
+    //     tracing::info!("check_fn::refine-subtyping");
+    //     let answer = infcx_root
+    //         .execute_fixpoint_query(
+    //             cache,
+    //             MaybeExternId::Local(def_id),
+    //             FixpointQueryKind::Impl,
+    //             def_id_to_cstr,
+    //             def_id_to_fixpoint_ctx,
+    //         )
+    //         .emit(&genv)?;
+    //     tracing::info!("check_fn::fixpoint-subtyping");
+    //     let errors = answer.errors;
+    //     report_fixpoint_errors(genv, def_id, errors)?;
+    // }
 
     // Skip trusted functions
     if genv.trusted(def_id) {

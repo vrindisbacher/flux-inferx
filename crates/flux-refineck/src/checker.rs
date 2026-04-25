@@ -355,55 +355,56 @@ fn check_fn_subtyping(
     })
 }
 
+// NOTE(VR): We don't need to check trait subtyping since there are no specs
 /// Trait subtyping check, which makes sure that the type for an impl method (def_id)
 /// is a subtype of the corresponding trait method.
-pub(crate) fn trait_impl_subtyping<'genv, 'tcx>(
-    genv: GlobalEnv<'genv, 'tcx>,
-    def_id: LocalDefId,
-    opts: InferOpts,
-    span: Span,
-) -> InferResult<Option<InferCtxtRoot<'genv, 'tcx>>> {
-    return Ok(None);
-    // let tcx = genv.tcx();
+// pub(crate) fn trait_impl_subtyping<'genv, 'tcx>(
+//     genv: GlobalEnv<'genv, 'tcx>,
+//     def_id: LocalDefId,
+//     opts: InferOpts,
+//     span: Span,
+// ) -> InferResult<Option<InferCtxtRoot<'genv, 'tcx>>> {
+//     return Ok(None);
+//     // let tcx = genv.tcx();
 
-    // // Skip the check if this is not an impl method
-    // let Some((impl_trait_ref, trait_method_id)) = find_trait_item(genv, def_id)? else {
-    //     return Ok(None);
-    // };
-    // let impl_method_id = def_id.to_def_id();
-    // // Skip the check if either the trait-method or the impl-method are marked as `trusted_impl`
-    // if genv.has_trusted_impl(trait_method_id) || genv.has_trusted_impl(impl_method_id) {
-    //     return Ok(None);
-    // }
+//     // // Skip the check if this is not an impl method
+//     // let Some((impl_trait_ref, trait_method_id)) = find_trait_item(genv, def_id)? else {
+//     //     return Ok(None);
+//     // };
+//     // let impl_method_id = def_id.to_def_id();
+//     // // Skip the check if either the trait-method or the impl-method are marked as `trusted_impl`
+//     // if genv.has_trusted_impl(trait_method_id) || genv.has_trusted_impl(impl_method_id) {
+//     //     return Ok(None);
+//     // }
 
-    // let impl_id = tcx.impl_of_assoc(impl_method_id).unwrap();
-    // let impl_method_args = GenericArg::identity_for_item(genv, impl_method_id)?;
-    // let trait_method_args = impl_method_args.rebase_onto(&tcx, impl_id, &impl_trait_ref.args);
-    // let trait_refine_args = RefineArgs::identity_for_item(genv, trait_method_id)?;
+//     // let impl_id = tcx.impl_of_assoc(impl_method_id).unwrap();
+//     // let impl_method_args = GenericArg::identity_for_item(genv, impl_method_id)?;
+//     // let trait_method_args = impl_method_args.rebase_onto(&tcx, impl_id, &impl_trait_ref.args);
+//     // let trait_refine_args = RefineArgs::identity_for_item(genv, trait_method_id)?;
 
-    // let rustc_infcx = genv
-    //     .tcx()
-    //     .infer_ctxt()
-    //     .with_next_trait_solver(true)
-    //     .build(TypingMode::non_body_analysis());
+//     // let rustc_infcx = genv
+//     //     .tcx()
+//     //     .infer_ctxt()
+//     //     .with_next_trait_solver(true)
+//     //     .build(TypingMode::non_body_analysis());
 
-    // let mut root_ctxt = genv
-    //     .infcx_root(&rustc_infcx, opts)
-    //     .with_const_generics(impl_id)?
-    //     .with_refinement_generics(trait_method_id, &trait_method_args)?
-    //     .build()?;
+//     // let mut root_ctxt = genv
+//     //     .infcx_root(&rustc_infcx, opts)
+//     //     .with_const_generics(impl_id)?
+//     //     .with_refinement_generics(trait_method_id, &trait_method_args)?
+//     //     .build()?;
 
-    // let mut infcx = root_ctxt.infcx(impl_method_id, &rustc_infcx);
+//     // let mut infcx = root_ctxt.infcx(impl_method_id, &rustc_infcx);
 
-    // let trait_fn_sig =
-    //     genv.fn_sig(trait_method_id)?
-    //         .instantiate(tcx, &trait_method_args, &trait_refine_args);
-    // let impl_sig = genv.fn_sig(impl_method_id)?;
-    // let sub_sig = SubFn::Poly(impl_method_id, impl_sig, impl_method_args);
+//     // let trait_fn_sig =
+//     //     genv.fn_sig(trait_method_id)?
+//     //         .instantiate(tcx, &trait_method_args, &trait_refine_args);
+//     // let impl_sig = genv.fn_sig(impl_method_id)?;
+//     // let sub_sig = SubFn::Poly(impl_method_id, impl_sig, impl_method_args);
 
-    // check_fn_subtyping(&mut infcx, sub_sig, &trait_fn_sig, span)?;
-    // Ok(Some(root_ctxt))
-}
+//     // check_fn_subtyping(&mut infcx, sub_sig, &trait_fn_sig, span)?;
+//     // Ok(Some(root_ctxt))
+// }
 
 fn find_trait_item(
     genv: GlobalEnv<'_, '_>,

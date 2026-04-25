@@ -182,6 +182,16 @@ impl<'genv, 'tcx> GlobalEnv<'genv, 'tcx> {
         map.iter().map(|(k, v)| (*k, v.clone())).collect()
     }
 
+    // reserves n kvids in the global kvar allocator so that there
+    // are no name clashes - NOTE this is used by `declare` beacuse 
+    // of the `Conj` encoding for Kvars where a single kvar is `remapped`
+    // to a different kvar
+    pub fn reserve_kvids(&self, n: usize) -> rty::KVid {
+        let start = *self.inner.kvid.borrow();
+        *self.inner.kvid.borrow_mut() += n;
+        start
+    }
+
     pub fn get_next_kvid(&self) -> rty::KVid {
         let res = *self.inner.kvid.borrow();
         *self.inner.kvid.borrow_mut() += 1;

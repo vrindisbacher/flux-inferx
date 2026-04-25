@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap},
-    path::Path,
-};
+use std::{collections::HashMap, path::Path};
 
 use flux_common::{bug, cache::QueryCache, iter::IterExt, result::ResultExt};
 use flux_config::{self as config};
@@ -197,9 +194,15 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
             let mut tasks = ck.def_id_to_cstr_map.clone().into_iter().map(|(_, t)| t);
 
             if let Some(mut mega_task) = tasks.next() {
+                // TODO: Fix merging constants so that they are globally 
+                // defined and we don't have potential clashes. 
+                // Right now they are all created locally from idx 0
+                // and we could have potential mismatches
                 for task in tasks {
                     mega_task.merge(task);
                 }
+
+                println!("KVARS ARE {:?}", mega_task.kvars);
 
                 let mut local_sink_kvar_map = HashMap::new();
                 for sink in sinks_to_check.iter() {
@@ -217,7 +220,7 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                         .iter()
                         .find(|k| k.kvid == fixpoint_kvid)
                         .map(|k| k.sorts[0].clone())
-                        .unwrap_or(fixpoint::Sort::Int);
+                        .unwrap_or_else(|| bug!("Could not get kvar sort for kvar: {fixpoint_kvid:?}"));
 
                     let bind = fixpoint::Bind {
                         name: fixpoint::Var::Local(local),
@@ -246,12 +249,17 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                 let verification_result = match mega_task.run() {
                     Ok(r) => r,
                     Err(err) => {
+                        println!("{mega_task}");
+                        bug!();
                         crash_log.push((*source, format!("mega_task run failed: {err}")));
                         continue;
                     }
                 };
 
                 if let FixpointStatus::Crash(ref crash_reason) = verification_result.status {
+                        println!("FAILED FOR {source:?}");
+                        println!("{mega_task}");
+                        bug!();
                     crash_log.push((*source, format!("FixpointStatus::Crash: {crash_reason:?}")));
                     continue;
                 }
@@ -483,12 +491,16 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                         let verification_result = match task.run() {
                             Ok(r) => r,
                             Err(err) => {
+                        println!("{mega_task}");
+                        bug!();
                                 crash_log.push((*source, format!("per-sink task run failed: {err}")));
                                 continue;
                             }
                         };
 
                         if let FixpointStatus::Crash(ref crash_reason) = verification_result.status {
+                        println!("{mega_task}");
+                        bug!();
                             crash_log.push((*source, format!("FixpointStatus::Crash: {crash_reason:?}")));
                             continue;
                         }
