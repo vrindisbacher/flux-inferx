@@ -202,8 +202,6 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                     mega_task.merge(task);
                 }
 
-                println!("KVARS ARE {:?}", mega_task.kvars);
-
                 let mut local_sink_kvar_map = HashMap::new();
                 for sink in sinks_to_check.iter() {
                     let sink_kvar = genv
@@ -249,18 +247,18 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                 let verification_result = match mega_task.run() {
                     Ok(r) => r,
                     Err(err) => {
-                        println!("{mega_task}");
-                        bug!();
-                        crash_log.push((*source, format!("mega_task run failed: {err}")));
+                        // println!("{mega_task}");
+                        // bug!();
+                        crash_log.push((*source, format!("mega_task run failed in mono phase: {err}")));
                         continue;
                     }
                 };
 
                 if let FixpointStatus::Crash(ref crash_reason) = verification_result.status {
-                        println!("FAILED FOR {source:?}");
-                        println!("{mega_task}");
-                        bug!();
-                    crash_log.push((*source, format!("FixpointStatus::Crash: {crash_reason:?}")));
+                        // println!("FAILED FOR {source:?}");
+                        // println!("{mega_task}");
+                        // bug!();
+                    crash_log.push((*source, format!("FixpointStatus::Crash in mono phase: {crash_reason:?}")));
                     continue;
                 }
 
@@ -491,17 +489,17 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                         let verification_result = match task.run() {
                             Ok(r) => r,
                             Err(err) => {
-                        println!("{mega_task}");
-                        bug!();
-                                crash_log.push((*source, format!("per-sink task run failed: {err}")));
+                        // println!("{mega_task}");
+                        // bug!();
+                                crash_log.push((*source, format!("per-sink task run failed in cut phase: {err}")));
                                 continue;
                             }
                         };
 
                         if let FixpointStatus::Crash(ref crash_reason) = verification_result.status {
-                        println!("{mega_task}");
-                        bug!();
-                            crash_log.push((*source, format!("FixpointStatus::Crash: {crash_reason:?}")));
+                        // println!("{mega_task}");
+                        // bug!();
+                            crash_log.push((*source, format!("FixpointStatus::Crash in cut phase: {crash_reason:?}")));
                             continue;
                         }
 
