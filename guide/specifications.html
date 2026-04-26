@@ -763,7 +763,7 @@ use flux_attrs::*;
 
 //---------------------------------------------------------------------------------------
 #[extern_spec]
-#[refined_by(len: int)]
+#[refined_by(len: int, items: Map&lt;int, T&gt;)]
 #[invariant(0 &lt;= len)]
 struct Vec&lt;T, A: Allocator = Global&gt;;
 
@@ -771,22 +771,22 @@ struct Vec&lt;T, A: Allocator = Global&gt;;
 
 #[extern_spec]
 impl&lt;T&gt; Vec&lt;T&gt; {
-    #[flux::sig(fn() -&gt; Vec&lt;T&gt;[0])]
+    #[flux::sig(fn() -&gt; Vec&lt;T&gt;{ v: v.len == 0 })]
     fn new() -&gt; Vec&lt;T&gt;;
 }
 
 #[extern_spec]
 impl&lt;T, A: Allocator&gt; Vec&lt;T, A&gt; {
-    #[spec(fn(self: &amp;mut Vec&lt;T, A&gt;[@n], T) ensures self: Vec&lt;T, A&gt;[n+1])]
+    #[spec(fn(self: &amp;mut Vec&lt;T, A&gt;[@n, @i], T[@v]) ensures self: Vec&lt;T, A&gt;[n+1, map_store(i, n, v)])]
     fn push(v: &amp;mut Vec&lt;T, A&gt;, value: T);
 
-    #[spec(fn(&amp;Vec&lt;T, A&gt;[@n]) -&gt; usize[n])]
+    #[spec(fn(&amp;Vec&lt;T, A&gt;[@n, @i]) -&gt; usize[n])]
     fn len(v: &amp;Vec&lt;T, A&gt;) -&gt; usize;
 
-    #[spec(fn(self: &amp;mut Vec&lt;T, A&gt;[@n]) -&gt; Option&lt;T&gt;[n &gt; 0] ensures self: Vec&lt;T, A&gt;[if n &gt; 0 { n-1 } else { 0 }])]
+    #[spec(fn(self: &amp;mut Vec&lt;T, A&gt;[@n, @i]) -&gt; Option&lt;T&gt;[n &gt; 0] ensures self: Vec&lt;T, A&gt;{v: v.len == if n &gt; 0 { n-1 } else { 0 } })]
     fn pop(&amp;mut self) -&gt; Option&lt;T&gt;;
 
-    #[spec(fn(self: &amp;Vec&lt;T, A&gt;[@n]) -&gt; bool[n == 0])]
+    #[spec(fn(self: &amp;Vec&lt;T, A&gt;[@n, @i]) -&gt; bool[n == 0])]
     fn is_empty(&amp;self) -&gt; bool;
 }
 
@@ -794,20 +794,20 @@ impl&lt;T, A: Allocator&gt; Vec&lt;T, A&gt; {
 
 #[extern_spec]
 impl&lt;T, I: SliceIndex&lt;[T]&gt;, A: Allocator&gt; Index&lt;I&gt; for Vec&lt;T, A&gt; {
-    #[spec(fn(&amp;Vec&lt;T, A&gt;[@len], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
+    #[spec(fn(&amp;Vec&lt;T, A&gt;[@len, @i], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
     fn index(z: &amp;Vec&lt;T, A&gt;, index: I) -&gt; &amp;&lt;I as SliceIndex&lt;[T]&gt;&gt;::Output;
 }
 
 #[extern_spec]
 impl&lt;T, I: SliceIndex&lt;[T]&gt;, A: Allocator&gt; IndexMut&lt;I&gt; for Vec&lt;T, A&gt; {
-    #[spec(fn(&amp;mut Vec&lt;T,A&gt;[@len], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
+    #[spec(fn(&amp;mut Vec&lt;T,A&gt;[@len, @i], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
     fn index_mut(z: &amp;mut Vec&lt;T, A&gt;, index: I) -&gt; &amp;mut &lt;I as SliceIndex&lt;[T]&gt;&gt;::Output;
 }
 
 //---------------------------------------------------------------------------------------
 #[extern_spec]
 impl&lt;'a, T, A: Allocator&gt; IntoIterator for &amp;'a Vec&lt;T, A&gt; {
-    #[spec(fn (&amp;Vec&lt;T, A&gt;[@n]) -&gt; &lt;&amp;Vec&lt;T, A&gt; as IntoIterator&gt;::IntoIter[0,n])]
+    #[spec(fn (&amp;Vec&lt;T, A&gt;[@n, @i]) -&gt; &lt;&amp;Vec&lt;T, A&gt; as IntoIterator&gt;::IntoIter[0,n])]
     fn into_iter(v: &amp;'a Vec&lt;T, A&gt;) -&gt; &lt;&amp;'a Vec&lt;T, A&gt; as IntoIterator&gt;::IntoIter;
 }
 
@@ -2828,7 +2828,7 @@ use flux_attrs::*;
 
 //---------------------------------------------------------------------------------------
 #[extern_spec]
-#[refined_by(len: int)]
+#[refined_by(len: int, items: Map&lt;int, T&gt;)]
 #[invariant(0 &lt;= len)]
 struct Vec&lt;T, A: Allocator = Global&gt;;
 
@@ -2836,22 +2836,22 @@ struct Vec&lt;T, A: Allocator = Global&gt;;
 
 #[extern_spec]
 impl&lt;T&gt; Vec&lt;T&gt; {
-    #[flux::sig(fn() -&gt; Vec&lt;T&gt;[0])]
+    #[flux::sig(fn() -&gt; Vec&lt;T&gt;{ v: v.len == 0 })]
     fn new() -&gt; Vec&lt;T&gt;;
 }
 
 #[extern_spec]
 impl&lt;T, A: Allocator&gt; Vec&lt;T, A&gt; {
-    #[spec(fn(self: &amp;mut Vec&lt;T, A&gt;[@n], T) ensures self: Vec&lt;T, A&gt;[n+1])]
+    #[spec(fn(self: &amp;mut Vec&lt;T, A&gt;[@n, @i], T[@v]) ensures self: Vec&lt;T, A&gt;[n+1, map_store(i, n, v)])]
     fn push(v: &amp;mut Vec&lt;T, A&gt;, value: T);
 
-    #[spec(fn(&amp;Vec&lt;T, A&gt;[@n]) -&gt; usize[n])]
+    #[spec(fn(&amp;Vec&lt;T, A&gt;[@n, @i]) -&gt; usize[n])]
     fn len(v: &amp;Vec&lt;T, A&gt;) -&gt; usize;
 
-    #[spec(fn(self: &amp;mut Vec&lt;T, A&gt;[@n]) -&gt; Option&lt;T&gt;[n &gt; 0] ensures self: Vec&lt;T, A&gt;[if n &gt; 0 { n-1 } else { 0 }])]
+    #[spec(fn(self: &amp;mut Vec&lt;T, A&gt;[@n, @i]) -&gt; Option&lt;T&gt;[n &gt; 0] ensures self: Vec&lt;T, A&gt;{v: v.len == if n &gt; 0 { n-1 } else { 0 } })]
     fn pop(&amp;mut self) -&gt; Option&lt;T&gt;;
 
-    #[spec(fn(self: &amp;Vec&lt;T, A&gt;[@n]) -&gt; bool[n == 0])]
+    #[spec(fn(self: &amp;Vec&lt;T, A&gt;[@n, @i]) -&gt; bool[n == 0])]
     fn is_empty(&amp;self) -&gt; bool;
 }
 
@@ -2859,20 +2859,20 @@ impl&lt;T, A: Allocator&gt; Vec&lt;T, A&gt; {
 
 #[extern_spec]
 impl&lt;T, I: SliceIndex&lt;[T]&gt;, A: Allocator&gt; Index&lt;I&gt; for Vec&lt;T, A&gt; {
-    #[spec(fn(&amp;Vec&lt;T, A&gt;[@len], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
+    #[spec(fn(&amp;Vec&lt;T, A&gt;[@len, @i], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
     fn index(z: &amp;Vec&lt;T, A&gt;, index: I) -&gt; &amp;&lt;I as SliceIndex&lt;[T]&gt;&gt;::Output;
 }
 
 #[extern_spec]
 impl&lt;T, I: SliceIndex&lt;[T]&gt;, A: Allocator&gt; IndexMut&lt;I&gt; for Vec&lt;T, A&gt; {
-    #[spec(fn(&amp;mut Vec&lt;T,A&gt;[@len], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
+    #[spec(fn(&amp;mut Vec&lt;T,A&gt;[@len, @i], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
     fn index_mut(z: &amp;mut Vec&lt;T, A&gt;, index: I) -&gt; &amp;mut &lt;I as SliceIndex&lt;[T]&gt;&gt;::Output;
 }
 
 //---------------------------------------------------------------------------------------
 #[extern_spec]
 impl&lt;'a, T, A: Allocator&gt; IntoIterator for &amp;'a Vec&lt;T, A&gt; {
-    #[spec(fn (&amp;Vec&lt;T, A&gt;[@n]) -&gt; &lt;&amp;Vec&lt;T, A&gt; as IntoIterator&gt;::IntoIter[0,n])]
+    #[spec(fn (&amp;Vec&lt;T, A&gt;[@n, @i]) -&gt; &lt;&amp;Vec&lt;T, A&gt; as IntoIterator&gt;::IntoIter[0,n])]
     fn into_iter(v: &amp;'a Vec&lt;T, A&gt;) -&gt; &lt;&amp;'a Vec&lt;T, A&gt; as IntoIterator&gt;::IntoIter;
 }
 
@@ -3328,7 +3328,7 @@ use flux_attrs::*;
 
 //---------------------------------------------------------------------------------------
 #[extern_spec]
-#[refined_by(len: int)]
+#[refined_by(len: int, items: Map&lt;int, T&gt;)]
 #[invariant(0 &lt;= len)]
 struct Vec&lt;T, A: Allocator = Global&gt;;
 
@@ -3336,22 +3336,22 @@ struct Vec&lt;T, A: Allocator = Global&gt;;
 
 #[extern_spec]
 impl&lt;T&gt; Vec&lt;T&gt; {
-    #[flux::sig(fn() -&gt; Vec&lt;T&gt;[0])]
+    #[flux::sig(fn() -&gt; Vec&lt;T&gt;{ v: v.len == 0 })]
     fn new() -&gt; Vec&lt;T&gt;;
 }
 
 #[extern_spec]
 impl&lt;T, A: Allocator&gt; Vec&lt;T, A&gt; {
-    #[spec(fn(self: &amp;mut Vec&lt;T, A&gt;[@n], T) ensures self: Vec&lt;T, A&gt;[n+1])]
+    #[spec(fn(self: &amp;mut Vec&lt;T, A&gt;[@n, @i], T[@v]) ensures self: Vec&lt;T, A&gt;[n+1, map_store(i, n, v)])]
     fn push(v: &amp;mut Vec&lt;T, A&gt;, value: T);
 
-    #[spec(fn(&amp;Vec&lt;T, A&gt;[@n]) -&gt; usize[n])]
+    #[spec(fn(&amp;Vec&lt;T, A&gt;[@n, @i]) -&gt; usize[n])]
     fn len(v: &amp;Vec&lt;T, A&gt;) -&gt; usize;
 
-    #[spec(fn(self: &amp;mut Vec&lt;T, A&gt;[@n]) -&gt; Option&lt;T&gt;[n &gt; 0] ensures self: Vec&lt;T, A&gt;[if n &gt; 0 { n-1 } else { 0 }])]
+    #[spec(fn(self: &amp;mut Vec&lt;T, A&gt;[@n, @i]) -&gt; Option&lt;T&gt;[n &gt; 0] ensures self: Vec&lt;T, A&gt;{v: v.len == if n &gt; 0 { n-1 } else { 0 } })]
     fn pop(&amp;mut self) -&gt; Option&lt;T&gt;;
 
-    #[spec(fn(self: &amp;Vec&lt;T, A&gt;[@n]) -&gt; bool[n == 0])]
+    #[spec(fn(self: &amp;Vec&lt;T, A&gt;[@n, @i]) -&gt; bool[n == 0])]
     fn is_empty(&amp;self) -&gt; bool;
 }
 
@@ -3359,20 +3359,20 @@ impl&lt;T, A: Allocator&gt; Vec&lt;T, A&gt; {
 
 #[extern_spec]
 impl&lt;T, I: SliceIndex&lt;[T]&gt;, A: Allocator&gt; Index&lt;I&gt; for Vec&lt;T, A&gt; {
-    #[spec(fn(&amp;Vec&lt;T, A&gt;[@len], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
+    #[spec(fn(&amp;Vec&lt;T, A&gt;[@len, @i], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
     fn index(z: &amp;Vec&lt;T, A&gt;, index: I) -&gt; &amp;&lt;I as SliceIndex&lt;[T]&gt;&gt;::Output;
 }
 
 #[extern_spec]
 impl&lt;T, I: SliceIndex&lt;[T]&gt;, A: Allocator&gt; IndexMut&lt;I&gt; for Vec&lt;T, A&gt; {
-    #[spec(fn(&amp;mut Vec&lt;T,A&gt;[@len], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
+    #[spec(fn(&amp;mut Vec&lt;T,A&gt;[@len, @i], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
     fn index_mut(z: &amp;mut Vec&lt;T, A&gt;, index: I) -&gt; &amp;mut &lt;I as SliceIndex&lt;[T]&gt;&gt;::Output;
 }
 
 //---------------------------------------------------------------------------------------
 #[extern_spec]
 impl&lt;'a, T, A: Allocator&gt; IntoIterator for &amp;'a Vec&lt;T, A&gt; {
-    #[spec(fn (&amp;Vec&lt;T, A&gt;[@n]) -&gt; &lt;&amp;Vec&lt;T, A&gt; as IntoIterator&gt;::IntoIter[0,n])]
+    #[spec(fn (&amp;Vec&lt;T, A&gt;[@n, @i]) -&gt; &lt;&amp;Vec&lt;T, A&gt; as IntoIterator&gt;::IntoIter[0,n])]
     fn into_iter(v: &amp;'a Vec&lt;T, A&gt;) -&gt; &lt;&amp;'a Vec&lt;T, A&gt; as IntoIterator&gt;::IntoIter;
 }
 

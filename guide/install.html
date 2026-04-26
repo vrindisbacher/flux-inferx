@@ -187,7 +187,7 @@ If you are using <code>rustup</code>, no special action is needed as it should i
 <p>Next, run the following to build and install <code>flux</code> binaries</p>
 <pre><code class="language-bash">cargo xtask install
 </code></pre>
-<p>This will install two binaries <code>flux</code> and <code>cargo-flux</code> in your cargo home. These two binaries should be used
+<p>This will install two binaries <code>flux</code> and <code>cargo-flux-inferx</code> in your cargo home. These two binaries should be used
 respectively to run Flux on either a single file or on a project using cargo. The installation process will
 also copy some files to <code>$HOME/.flux</code>.</p>
 <p>In order to use Flux refinement attributes in a Cargo project, you will need to add the
@@ -215,7 +215,7 @@ fn inc(x: i32) -&gt; i32 {
     x - 1
 }
 <span class="boring">}</span></code></pre></pre>
-<h2 id="running-on-a-package-cargo-flux"><a class="header" href="#running-on-a-package-cargo-flux">Running on a package: <code>cargo-flux</code></a></h2>
+<h2 id="running-on-a-package-cargo-flux-inferx"><a class="header" href="#running-on-a-package-cargo-flux-inferx">Running on a package: <code>cargo-flux-inferx</code></a></h2>
 <p>See this an
 Flux is integrated with <code>cargo</code> and can be invoked in a package as follows:</p>
 <pre><code class="language-bash">cargo flux
@@ -274,9 +274,9 @@ driver</a>
 (similar to how clippy works) meaning it uses rustc as a library to "drive"
 compilation performing additional analysis along the way. Running the binary
 requires dynamically linking a correct version of <code>librustc</code>. Thus, to avoid the
-hassle you should never execute it directly. Instead, use <code>flux</code> or <code>cargo-flux</code>.</p>
+hassle you should never execute it directly. Instead, use <code>flux</code> or <code>cargo-flux-inferx</code>.</p>
 <h2 id="editor-support"><a class="header" href="#editor-support">Editor Support</a></h2>
-<p>This section assumes you have installed <code>cargo-flux</code>.</p>
+<p>This section assumes you have installed <code>cargo-flux-inferx</code>.</p>
 <h3 id="rust-analyzer-in-vscode"><a class="header" href="#rust-analyzer-in-vscode">Rust-Analyzer in VSCode</a></h3>
 <p>Add this to the workspace settings i.e. <code>.vscode/settings.json</code></p>
 <pre><code class="language-json">{
@@ -314,7 +314,7 @@ content of the <code>metadata</code> table. Note that the content of <code>flux.
 for all crates, including dependencies. This behavior is likely to change in the future as we figure
 out what configurations make sense to have per package and which should only affect the current execution
 of <code>cargo flux</code>.</p>
-<p>You can see the format of the <code>metadata</code> in <a href="https://flux-rs.github.io/flux/doc/flux_bin/struct.FluxMetadata.html">https://flux-rs.github.io/flux/doc/flux_bin/struct.FluxMetadata.html</a>.</p>
+<p>You can see the format of the <code>metadata</code> in <a href="https://flux-rs.github.io/flux/doc/flux_inferx_bin/struct.FluxMetadata.html">https://flux-rs.github.io/flux/doc/flux_inferx_bin/struct.FluxMetadata.html</a>.</p>
 <h3 id="fluxflags-environement-variable"><a class="header" href="#fluxflags-environement-variable"><code>FLUXFLAGS</code> Environement Variable</a></h3>
 <p>When running <code>cargo flux</code>, flags defined in <code>FLUXFLAGS</code> will be passed to all <code>flux</code> invocations,
 for example, to print timing information for all crates checked by Flux:</p>

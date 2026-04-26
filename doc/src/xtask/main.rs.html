@@ -140,7 +140,7 @@
 <a href=#140 id=140 data-nosnippet>140</a>        dst: local_sysroot_dir()<span class="question-mark">?</span>,
 <a href=#141 id=141 data-nosnippet>141</a>        build_libs: BuildLibs { force: <span class="bool-val">false</span>, <span class="macro">tests: !</span>args.no_lib_tests, libs: FluxLib::ALL },
 <a href=#142 id=142 data-nosnippet>142</a>    };
-<a href=#143 id=143 data-nosnippet>143</a>    <span class="kw">let </span>flux = build_binary(<span class="string">"flux"</span>, config.profile, <span class="bool-val">false</span>)<span class="question-mark">?</span>;
+<a href=#143 id=143 data-nosnippet>143</a>    <span class="kw">let </span>flux = build_binary(<span class="string">"flux-inferx"</span>, config.profile, <span class="bool-val">false</span>)<span class="question-mark">?</span>;
 <a href=#144 id=144 data-nosnippet>144</a>    install_sysroot(<span class="kw-2">&amp;</span>config)<span class="question-mark">?</span>;
 <a href=#145 id=145 data-nosnippet>145</a>
 <a href=#146 id=146 data-nosnippet>146</a>    Command::new(<span class="string">"cargo"</span>)
@@ -163,7 +163,7 @@
 <a href=#163 id=163 data-nosnippet>163</a>        build_libs: BuildLibs { force: <span class="bool-val">false</span>, tests: <span class="bool-val">false</span>, libs: FluxLib::ALL },
 <a href=#164 id=164 data-nosnippet>164</a>    };
 <a href=#165 id=165 data-nosnippet>165</a>    install_sysroot(<span class="kw-2">&amp;</span>config)<span class="question-mark">?</span>;
-<a href=#166 id=166 data-nosnippet>166</a>    <span class="kw">let </span>flux = build_binary(<span class="string">"flux"</span>, config.profile, <span class="bool-val">false</span>)<span class="question-mark">?</span>;
+<a href=#166 id=166 data-nosnippet>166</a>    <span class="kw">let </span>flux = build_binary(<span class="string">"flux-inferx"</span>, config.profile, <span class="bool-val">false</span>)<span class="question-mark">?</span>;
 <a href=#167 id=167 data-nosnippet>167</a>
 <a href=#168 id=168 data-nosnippet>168</a>    <span class="kw">let </span>pos_path = PathBuf::from(<span class="string">"tests/tests/pos"</span>);
 <a href=#169 id=169 data-nosnippet>169</a>    <span class="kw">let </span>lean_bench_dir = PathBuf::from(<span class="string">"tests/lean_bench"</span>);
@@ -318,7 +318,7 @@
 <a href=#318 id=318 data-nosnippet>318</a>    };
 <a href=#319 id=319 data-nosnippet>319</a>
 <a href=#320 id=320 data-nosnippet>320</a>    install_sysroot(<span class="kw-2">&amp;</span>config)<span class="question-mark">?</span>;
-<a href=#321 id=321 data-nosnippet>321</a>    <span class="kw">let </span>flux = build_binary(<span class="string">"flux"</span>, config.profile, <span class="bool-val">false</span>)<span class="question-mark">?</span>;
+<a href=#321 id=321 data-nosnippet>321</a>    <span class="kw">let </span>flux = build_binary(<span class="string">"flux-inferx"</span>, config.profile, <span class="bool-val">false</span>)<span class="question-mark">?</span>;
 <a href=#322 id=322 data-nosnippet>322</a>
 <a href=#323 id=323 data-nosnippet>323</a>    <span class="kw">let </span><span class="kw-2">mut </span>rustc_flags = tests::default_flags();
 <a href=#324 id=324 data-nosnippet>324</a>    rustc_flags.extend(flags);
@@ -340,14 +340,14 @@
 <a href=#340 id=340 data-nosnippet>340</a>    };
 <a href=#341 id=341 data-nosnippet>341</a>    install_sysroot(<span class="kw-2">&amp;</span>config)<span class="question-mark">?</span>;
 <a href=#342 id=342 data-nosnippet>342</a>    Command::new(<span class="string">"cargo"</span>)
-<a href=#343 id=343 data-nosnippet>343</a>        .args([<span class="string">"install"</span>, <span class="string">"--path"</span>, <span class="string">"crates/flux-bin"</span>, <span class="string">"--force"</span>])
+<a href=#343 id=343 data-nosnippet>343</a>        .args([<span class="string">"install"</span>, <span class="string">"--path"</span>, <span class="string">"crates/flux-inferx-bin"</span>, <span class="string">"--force"</span>])
 <a href=#344 id=344 data-nosnippet>344</a>        .args(extra)
 <a href=#345 id=345 data-nosnippet>345</a>        .run()
 <a href=#346 id=346 data-nosnippet>346</a>}
 <a href=#347 id=347 data-nosnippet>347</a>
 <a href=#348 id=348 data-nosnippet>348</a><span class="kw">fn </span>uninstall() -&gt; anyhow::Result&lt;()&gt; {
 <a href=#349 id=349 data-nosnippet>349</a>    Command::new(<span class="string">"cargo"</span>)
-<a href=#350 id=350 data-nosnippet>350</a>        .args([<span class="string">"uninstall"</span>, <span class="string">"-p"</span>, <span class="string">"flux-bin"</span>])
+<a href=#350 id=350 data-nosnippet>350</a>        .args([<span class="string">"uninstall"</span>, <span class="string">"-p"</span>, <span class="string">"flux-inferx-bin"</span>])
 <a href=#351 id=351 data-nosnippet>351</a>        .run()<span class="question-mark">?</span>;
 <a href=#352 id=352 data-nosnippet>352</a>    <span class="macro">eprintln!</span>(<span class="string">"$ rm -rf ~/.flux"</span>);
 <a href=#353 id=353 data-nosnippet>353</a>    remove_path(<span class="kw-2">&amp;</span>default_sysroot_dir())<span class="question-mark">?</span>;
@@ -440,17 +440,17 @@
 <a href=#440 id=440 data-nosnippet>440</a>
 <a href=#441 id=441 data-nosnippet>441</a>    copy_file(build_binary(<span class="string">"flux-driver"</span>, config.profile, config.rust_fixpoint)<span class="question-mark">?</span>, <span class="kw-2">&amp;</span>config.dst)<span class="question-mark">?</span>;
 <a href=#442 id=442 data-nosnippet>442</a>
-<a href=#443 id=443 data-nosnippet>443</a>    <span class="kw">let </span>cargo_flux = build_binary(<span class="string">"cargo-flux"</span>, config.profile, config.rust_fixpoint)<span class="question-mark">?</span>;
+<a href=#443 id=443 data-nosnippet>443</a>    <span class="kw">let </span>cargo_flux = build_binary(<span class="string">"cargo-flux-inferx"</span>, config.profile, config.rust_fixpoint)<span class="question-mark">?</span>;
 <a href=#444 id=444 data-nosnippet>444</a>
 <a href=#445 id=445 data-nosnippet>445</a>    <span class="kw">if </span>config.build_libs.force {
 <a href=#446 id=446 data-nosnippet>446</a>        Command::new(<span class="kw-2">&amp;</span>cargo_flux)
-<a href=#447 id=447 data-nosnippet>447</a>            .args([<span class="string">"flux"</span>, <span class="string">"clean"</span>])
+<a href=#447 id=447 data-nosnippet>447</a>            .args([<span class="string">"flux-inferx"</span>, <span class="string">"clean"</span>])
 <a href=#448 id=448 data-nosnippet>448</a>            .env(FLUX_SYSROOT, <span class="kw-2">&amp;</span>config.dst)
 <a href=#449 id=449 data-nosnippet>449</a>            .run()<span class="question-mark">?</span>;
 <a href=#450 id=450 data-nosnippet>450</a>    }
 <a href=#451 id=451 data-nosnippet>451</a>
 <a href=#452 id=452 data-nosnippet>452</a>    <span class="kw">let </span>artifacts = Command::new(cargo_flux)
-<a href=#453 id=453 data-nosnippet>453</a>        .arg(<span class="string">"flux"</span>)
+<a href=#453 id=453 data-nosnippet>453</a>        .arg(<span class="string">"flux-inferx"</span>)
 <a href=#454 id=454 data-nosnippet>454</a>        .args(
 <a href=#455 id=455 data-nosnippet>455</a>            config
 <a href=#456 id=456 data-nosnippet>456</a>                .build_libs

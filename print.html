@@ -212,7 +212,7 @@ If you are using <code>rustup</code>, no special action is needed as it should i
 <p>Next, run the following to build and install <code>flux</code> binaries</p>
 <pre><code class="language-bash">cargo xtask install
 </code></pre>
-<p>This will install two binaries <code>flux</code> and <code>cargo-flux</code> in your cargo home. These two binaries should be used
+<p>This will install two binaries <code>flux</code> and <code>cargo-flux-inferx</code> in your cargo home. These two binaries should be used
 respectively to run Flux on either a single file or on a project using cargo. The installation process will
 also copy some files to <code>$HOME/.flux</code>.</p>
 <p>In order to use Flux refinement attributes in a Cargo project, you will need to add the
@@ -240,7 +240,7 @@ fn inc(x: i32) -&gt; i32 {
     x - 1
 }
 <span class="boring">}</span></code></pre></pre>
-<h2 id="running-on-a-package-cargo-flux"><a class="header" href="#running-on-a-package-cargo-flux">Running on a package: <code>cargo-flux</code></a></h2>
+<h2 id="running-on-a-package-cargo-flux-inferx"><a class="header" href="#running-on-a-package-cargo-flux-inferx">Running on a package: <code>cargo-flux-inferx</code></a></h2>
 <p>See this an
 Flux is integrated with <code>cargo</code> and can be invoked in a package as follows:</p>
 <pre><code class="language-bash">cargo flux
@@ -299,9 +299,9 @@ driver</a>
 (similar to how clippy works) meaning it uses rustc as a library to "drive"
 compilation performing additional analysis along the way. Running the binary
 requires dynamically linking a correct version of <code>librustc</code>. Thus, to avoid the
-hassle you should never execute it directly. Instead, use <code>flux</code> or <code>cargo-flux</code>.</p>
+hassle you should never execute it directly. Instead, use <code>flux</code> or <code>cargo-flux-inferx</code>.</p>
 <h2 id="editor-support"><a class="header" href="#editor-support">Editor Support</a></h2>
-<p>This section assumes you have installed <code>cargo-flux</code>.</p>
+<p>This section assumes you have installed <code>cargo-flux-inferx</code>.</p>
 <h3 id="rust-analyzer-in-vscode"><a class="header" href="#rust-analyzer-in-vscode">Rust-Analyzer in VSCode</a></h3>
 <p>Add this to the workspace settings i.e. <code>.vscode/settings.json</code></p>
 <pre><code class="language-json">{
@@ -339,7 +339,7 @@ content of the <code>metadata</code> table. Note that the content of <code>flux.
 for all crates, including dependencies. This behavior is likely to change in the future as we figure
 out what configurations make sense to have per package and which should only affect the current execution
 of <code>cargo flux</code>.</p>
-<p>You can see the format of the <code>metadata</code> in <a href="https://flux-rs.github.io/flux/doc/flux_bin/struct.FluxMetadata.html">https://flux-rs.github.io/flux/doc/flux_bin/struct.FluxMetadata.html</a>.</p>
+<p>You can see the format of the <code>metadata</code> in <a href="https://flux-rs.github.io/flux/doc/flux_inferx_bin/struct.FluxMetadata.html">https://flux-rs.github.io/flux/doc/flux_inferx_bin/struct.FluxMetadata.html</a>.</p>
 <h3 id="fluxflags-environement-variable"><a class="header" href="#fluxflags-environement-variable"><code>FLUXFLAGS</code> Environement Variable</a></h3>
 <p>When running <code>cargo flux</code>, flags defined in <code>FLUXFLAGS</code> will be passed to all <code>flux</code> invocations,
 for example, to print timing information for all crates checked by Flux:</p>
@@ -4898,7 +4898,7 @@ use flux_attrs::*;
 
 //---------------------------------------------------------------------------------------
 #[extern_spec]
-#[refined_by(len: int)]
+#[refined_by(len: int, items: Map&lt;int, T&gt;)]
 #[invariant(0 &lt;= len)]
 struct Vec&lt;T, A: Allocator = Global&gt;;
 
@@ -4906,22 +4906,22 @@ struct Vec&lt;T, A: Allocator = Global&gt;;
 
 #[extern_spec]
 impl&lt;T&gt; Vec&lt;T&gt; {
-    #[flux::sig(fn() -&gt; Vec&lt;T&gt;[0])]
+    #[flux::sig(fn() -&gt; Vec&lt;T&gt;{ v: v.len == 0 })]
     fn new() -&gt; Vec&lt;T&gt;;
 }
 
 #[extern_spec]
 impl&lt;T, A: Allocator&gt; Vec&lt;T, A&gt; {
-    #[spec(fn(self: &amp;mut Vec&lt;T, A&gt;[@n], T) ensures self: Vec&lt;T, A&gt;[n+1])]
+    #[spec(fn(self: &amp;mut Vec&lt;T, A&gt;[@n, @i], T[@v]) ensures self: Vec&lt;T, A&gt;[n+1, map_store(i, n, v)])]
     fn push(v: &amp;mut Vec&lt;T, A&gt;, value: T);
 
-    #[spec(fn(&amp;Vec&lt;T, A&gt;[@n]) -&gt; usize[n])]
+    #[spec(fn(&amp;Vec&lt;T, A&gt;[@n, @i]) -&gt; usize[n])]
     fn len(v: &amp;Vec&lt;T, A&gt;) -&gt; usize;
 
-    #[spec(fn(self: &amp;mut Vec&lt;T, A&gt;[@n]) -&gt; Option&lt;T&gt;[n &gt; 0] ensures self: Vec&lt;T, A&gt;[if n &gt; 0 { n-1 } else { 0 }])]
+    #[spec(fn(self: &amp;mut Vec&lt;T, A&gt;[@n, @i]) -&gt; Option&lt;T&gt;[n &gt; 0] ensures self: Vec&lt;T, A&gt;{v: v.len == if n &gt; 0 { n-1 } else { 0 } })]
     fn pop(&amp;mut self) -&gt; Option&lt;T&gt;;
 
-    #[spec(fn(self: &amp;Vec&lt;T, A&gt;[@n]) -&gt; bool[n == 0])]
+    #[spec(fn(self: &amp;Vec&lt;T, A&gt;[@n, @i]) -&gt; bool[n == 0])]
     fn is_empty(&amp;self) -&gt; bool;
 }
 
@@ -4929,20 +4929,20 @@ impl&lt;T, A: Allocator&gt; Vec&lt;T, A&gt; {
 
 #[extern_spec]
 impl&lt;T, I: SliceIndex&lt;[T]&gt;, A: Allocator&gt; Index&lt;I&gt; for Vec&lt;T, A&gt; {
-    #[spec(fn(&amp;Vec&lt;T, A&gt;[@len], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
+    #[spec(fn(&amp;Vec&lt;T, A&gt;[@len, @i], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
     fn index(z: &amp;Vec&lt;T, A&gt;, index: I) -&gt; &amp;&lt;I as SliceIndex&lt;[T]&gt;&gt;::Output;
 }
 
 #[extern_spec]
 impl&lt;T, I: SliceIndex&lt;[T]&gt;, A: Allocator&gt; IndexMut&lt;I&gt; for Vec&lt;T, A&gt; {
-    #[spec(fn(&amp;mut Vec&lt;T,A&gt;[@len], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
+    #[spec(fn(&amp;mut Vec&lt;T,A&gt;[@len, @i], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
     fn index_mut(z: &amp;mut Vec&lt;T, A&gt;, index: I) -&gt; &amp;mut &lt;I as SliceIndex&lt;[T]&gt;&gt;::Output;
 }
 
 //---------------------------------------------------------------------------------------
 #[extern_spec]
 impl&lt;'a, T, A: Allocator&gt; IntoIterator for &amp;'a Vec&lt;T, A&gt; {
-    #[spec(fn (&amp;Vec&lt;T, A&gt;[@n]) -&gt; &lt;&amp;Vec&lt;T, A&gt; as IntoIterator&gt;::IntoIter[0,n])]
+    #[spec(fn (&amp;Vec&lt;T, A&gt;[@n, @i]) -&gt; &lt;&amp;Vec&lt;T, A&gt; as IntoIterator&gt;::IntoIter[0,n])]
     fn into_iter(v: &amp;'a Vec&lt;T, A&gt;) -&gt; &lt;&amp;'a Vec&lt;T, A&gt; as IntoIterator&gt;::IntoIter;
 }
 
@@ -6963,7 +6963,7 @@ use flux_attrs::*;
 
 //---------------------------------------------------------------------------------------
 #[extern_spec]
-#[refined_by(len: int)]
+#[refined_by(len: int, items: Map&lt;int, T&gt;)]
 #[invariant(0 &lt;= len)]
 struct Vec&lt;T, A: Allocator = Global&gt;;
 
@@ -6971,22 +6971,22 @@ struct Vec&lt;T, A: Allocator = Global&gt;;
 
 #[extern_spec]
 impl&lt;T&gt; Vec&lt;T&gt; {
-    #[flux::sig(fn() -&gt; Vec&lt;T&gt;[0])]
+    #[flux::sig(fn() -&gt; Vec&lt;T&gt;{ v: v.len == 0 })]
     fn new() -&gt; Vec&lt;T&gt;;
 }
 
 #[extern_spec]
 impl&lt;T, A: Allocator&gt; Vec&lt;T, A&gt; {
-    #[spec(fn(self: &amp;mut Vec&lt;T, A&gt;[@n], T) ensures self: Vec&lt;T, A&gt;[n+1])]
+    #[spec(fn(self: &amp;mut Vec&lt;T, A&gt;[@n, @i], T[@v]) ensures self: Vec&lt;T, A&gt;[n+1, map_store(i, n, v)])]
     fn push(v: &amp;mut Vec&lt;T, A&gt;, value: T);
 
-    #[spec(fn(&amp;Vec&lt;T, A&gt;[@n]) -&gt; usize[n])]
+    #[spec(fn(&amp;Vec&lt;T, A&gt;[@n, @i]) -&gt; usize[n])]
     fn len(v: &amp;Vec&lt;T, A&gt;) -&gt; usize;
 
-    #[spec(fn(self: &amp;mut Vec&lt;T, A&gt;[@n]) -&gt; Option&lt;T&gt;[n &gt; 0] ensures self: Vec&lt;T, A&gt;[if n &gt; 0 { n-1 } else { 0 }])]
+    #[spec(fn(self: &amp;mut Vec&lt;T, A&gt;[@n, @i]) -&gt; Option&lt;T&gt;[n &gt; 0] ensures self: Vec&lt;T, A&gt;{v: v.len == if n &gt; 0 { n-1 } else { 0 } })]
     fn pop(&amp;mut self) -&gt; Option&lt;T&gt;;
 
-    #[spec(fn(self: &amp;Vec&lt;T, A&gt;[@n]) -&gt; bool[n == 0])]
+    #[spec(fn(self: &amp;Vec&lt;T, A&gt;[@n, @i]) -&gt; bool[n == 0])]
     fn is_empty(&amp;self) -&gt; bool;
 }
 
@@ -6994,20 +6994,20 @@ impl&lt;T, A: Allocator&gt; Vec&lt;T, A&gt; {
 
 #[extern_spec]
 impl&lt;T, I: SliceIndex&lt;[T]&gt;, A: Allocator&gt; Index&lt;I&gt; for Vec&lt;T, A&gt; {
-    #[spec(fn(&amp;Vec&lt;T, A&gt;[@len], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
+    #[spec(fn(&amp;Vec&lt;T, A&gt;[@len, @i], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
     fn index(z: &amp;Vec&lt;T, A&gt;, index: I) -&gt; &amp;&lt;I as SliceIndex&lt;[T]&gt;&gt;::Output;
 }
 
 #[extern_spec]
 impl&lt;T, I: SliceIndex&lt;[T]&gt;, A: Allocator&gt; IndexMut&lt;I&gt; for Vec&lt;T, A&gt; {
-    #[spec(fn(&amp;mut Vec&lt;T,A&gt;[@len], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
+    #[spec(fn(&amp;mut Vec&lt;T,A&gt;[@len, @i], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
     fn index_mut(z: &amp;mut Vec&lt;T, A&gt;, index: I) -&gt; &amp;mut &lt;I as SliceIndex&lt;[T]&gt;&gt;::Output;
 }
 
 //---------------------------------------------------------------------------------------
 #[extern_spec]
 impl&lt;'a, T, A: Allocator&gt; IntoIterator for &amp;'a Vec&lt;T, A&gt; {
-    #[spec(fn (&amp;Vec&lt;T, A&gt;[@n]) -&gt; &lt;&amp;Vec&lt;T, A&gt; as IntoIterator&gt;::IntoIter[0,n])]
+    #[spec(fn (&amp;Vec&lt;T, A&gt;[@n, @i]) -&gt; &lt;&amp;Vec&lt;T, A&gt; as IntoIterator&gt;::IntoIter[0,n])]
     fn into_iter(v: &amp;'a Vec&lt;T, A&gt;) -&gt; &lt;&amp;'a Vec&lt;T, A&gt; as IntoIterator&gt;::IntoIter;
 }
 
@@ -7463,7 +7463,7 @@ use flux_attrs::*;
 
 //---------------------------------------------------------------------------------------
 #[extern_spec]
-#[refined_by(len: int)]
+#[refined_by(len: int, items: Map&lt;int, T&gt;)]
 #[invariant(0 &lt;= len)]
 struct Vec&lt;T, A: Allocator = Global&gt;;
 
@@ -7471,22 +7471,22 @@ struct Vec&lt;T, A: Allocator = Global&gt;;
 
 #[extern_spec]
 impl&lt;T&gt; Vec&lt;T&gt; {
-    #[flux::sig(fn() -&gt; Vec&lt;T&gt;[0])]
+    #[flux::sig(fn() -&gt; Vec&lt;T&gt;{ v: v.len == 0 })]
     fn new() -&gt; Vec&lt;T&gt;;
 }
 
 #[extern_spec]
 impl&lt;T, A: Allocator&gt; Vec&lt;T, A&gt; {
-    #[spec(fn(self: &amp;mut Vec&lt;T, A&gt;[@n], T) ensures self: Vec&lt;T, A&gt;[n+1])]
+    #[spec(fn(self: &amp;mut Vec&lt;T, A&gt;[@n, @i], T[@v]) ensures self: Vec&lt;T, A&gt;[n+1, map_store(i, n, v)])]
     fn push(v: &amp;mut Vec&lt;T, A&gt;, value: T);
 
-    #[spec(fn(&amp;Vec&lt;T, A&gt;[@n]) -&gt; usize[n])]
+    #[spec(fn(&amp;Vec&lt;T, A&gt;[@n, @i]) -&gt; usize[n])]
     fn len(v: &amp;Vec&lt;T, A&gt;) -&gt; usize;
 
-    #[spec(fn(self: &amp;mut Vec&lt;T, A&gt;[@n]) -&gt; Option&lt;T&gt;[n &gt; 0] ensures self: Vec&lt;T, A&gt;[if n &gt; 0 { n-1 } else { 0 }])]
+    #[spec(fn(self: &amp;mut Vec&lt;T, A&gt;[@n, @i]) -&gt; Option&lt;T&gt;[n &gt; 0] ensures self: Vec&lt;T, A&gt;{v: v.len == if n &gt; 0 { n-1 } else { 0 } })]
     fn pop(&amp;mut self) -&gt; Option&lt;T&gt;;
 
-    #[spec(fn(self: &amp;Vec&lt;T, A&gt;[@n]) -&gt; bool[n == 0])]
+    #[spec(fn(self: &amp;Vec&lt;T, A&gt;[@n, @i]) -&gt; bool[n == 0])]
     fn is_empty(&amp;self) -&gt; bool;
 }
 
@@ -7494,20 +7494,20 @@ impl&lt;T, A: Allocator&gt; Vec&lt;T, A&gt; {
 
 #[extern_spec]
 impl&lt;T, I: SliceIndex&lt;[T]&gt;, A: Allocator&gt; Index&lt;I&gt; for Vec&lt;T, A&gt; {
-    #[spec(fn(&amp;Vec&lt;T, A&gt;[@len], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
+    #[spec(fn(&amp;Vec&lt;T, A&gt;[@len, @i], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
     fn index(z: &amp;Vec&lt;T, A&gt;, index: I) -&gt; &amp;&lt;I as SliceIndex&lt;[T]&gt;&gt;::Output;
 }
 
 #[extern_spec]
 impl&lt;T, I: SliceIndex&lt;[T]&gt;, A: Allocator&gt; IndexMut&lt;I&gt; for Vec&lt;T, A&gt; {
-    #[spec(fn(&amp;mut Vec&lt;T,A&gt;[@len], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
+    #[spec(fn(&amp;mut Vec&lt;T,A&gt;[@len, @i], {I[@idx] | &lt;I as SliceIndex&lt;[T]&gt;&gt;::in_bounds(idx, len)}) -&gt; _)]
     fn index_mut(z: &amp;mut Vec&lt;T, A&gt;, index: I) -&gt; &amp;mut &lt;I as SliceIndex&lt;[T]&gt;&gt;::Output;
 }
 
 //---------------------------------------------------------------------------------------
 #[extern_spec]
 impl&lt;'a, T, A: Allocator&gt; IntoIterator for &amp;'a Vec&lt;T, A&gt; {
-    #[spec(fn (&amp;Vec&lt;T, A&gt;[@n]) -&gt; &lt;&amp;Vec&lt;T, A&gt; as IntoIterator&gt;::IntoIter[0,n])]
+    #[spec(fn (&amp;Vec&lt;T, A&gt;[@n, @i]) -&gt; &lt;&amp;Vec&lt;T, A&gt; as IntoIterator&gt;::IntoIter[0,n])]
     fn into_iter(v: &amp;'a Vec&lt;T, A&gt;) -&gt; &lt;&amp;'a Vec&lt;T, A&gt; as IntoIterator&gt;::IntoIter;
 }
 
@@ -8295,7 +8295,7 @@ of the libraries by running:</p>
 <p>Flux is implemented as a compiler <a href="https://rustc-dev-guide.rust-lang.org/rustc-driver.html?highlight=Callbacks%5C#rustc_driver-and-rustc_interface">driver</a>. We hook into the compiler by implementing the <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_driver/trait.Callbacks.html"><code>Callbacks</code></a> trait. The implementation is located is in the <code>flux-driver</code> crate, and it is the main entry point to Flux.</p>
 <h2 id="crates"><a class="header" href="#crates">Crates</a></h2>
 <ul>
-<li><code>crates/flux-bin</code>: Contains the <code>cargo-flux</code> and <code>flux</code> binaries used to launch the <code>flux-driver</code>.</li>
+<li><code>crates/flux-inferx-bin</code>: Contains the <code>cargo-flux-inferx</code> and <code>flux</code> binaries used to launch the <code>flux-driver</code>.</li>
 <li><code>crates/flux-common</code>: Common utility definitions used across all crates.</li>
 <li><code>crates/flux-config</code>: Crate containing logic associated with global configuration flags that change the behavior of Flux, e.g, to enable or disable overflow checking.</li>
 <li><code>crates/flux-desugar</code>: Implementation of name resolution and desugaring from Flux surface syntax into Flux high-level intermediate representation (<code>fhir</code>). This includes name resolution.</li>

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CannotResolveReason"],"fn":["build_call_graph","explore","get_callees","resolve_or_fallback"],"struct":["CallGraph","GraphBuildResult"]};
