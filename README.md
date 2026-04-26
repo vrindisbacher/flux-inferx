@@ -4,20 +4,8 @@
 
 Flux-Inferx is a policy inference tool based on Flux: a refinement type checker for Rust.
 
-# Help and Discussions
+# Use
 
-If you need help using Flux or would like to discuss, you can post on the discussions forum or join
-our [Zulip chat](https://flux-rs.zulipchat.com/)!
+flux-inferx is used by the Terrapin Policy Inference tool. Refer to it for usage info:
 
-# Online Demo
-
-You can try Flux [online at this site](https://flux.goto.ucsd.edu/).
-
-# Overview
-
-For an overview, take a look at the [Flux website](https://flux-rs.github.io).
-
-# Docs
-
-Documentation, including installation and usage guides can be found on the
-[website](https://flux-rs.github.io/flux).
+[terrapin-inferx](https://github.com/PLSysSec/terrapin-inferx)
