@@ -140,6 +140,7 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
         }
 
         let mut crash_log: Vec<(DefId, String)> = Vec::new();
+        let mut seen_sols = FxIndexSet::default();
         let mut solution_log = Vec::new();
 
         for source in sources.iter() {
@@ -253,8 +254,6 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                     }
                 };
 
-                println!("CHECKING SOURCE: {source:?}");
-
                 if let FixpointStatus::Crash(ref crash_reason) = verification_result.status {
                         // println!("FAILED FOR {source:?}");
                         // println!("{mega_task}");
@@ -296,9 +295,7 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                             .skip_binder_ref()
                             .simplify(&SnapshotMap::default())
                             .normalize(genv);
-                        println!("CONVERTING TO DNF");
                         let disjuncts = simplified_sol.to_dnf();
-                        println!("DONE");
 
                         let mut constraints = Vec::new();
 
@@ -530,8 +527,11 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                         }
 
                         if !solutions.is_empty() {
-                            let sink_for = genv.sink_for(*sink_def_id);
-                            solution_log.push((*source, sink_for, solutions));
+                            if !seen_sols.contains(source) {
+                                let sink_for = genv.sink_for(*sink_def_id);
+                                solution_log.push((*source, sink_for, solutions));
+                                seen_sols.insert(*source);
+                            } 
                         }
                     }
                 }
