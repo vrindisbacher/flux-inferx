@@ -13,7 +13,7 @@ use flux_rustc_bridge::{
     mir::{self},
     ty,
 };
-use flux_syntax::symbols::sym;
+use flux_syntax::{surface::Attr, symbols::sym};
 use itertools::Itertools;
 use rustc_data_structures::unord::{ExtendUnord, UnordMap, UnordSet};
 use rustc_errors::Diagnostic;
@@ -28,7 +28,7 @@ use rustc_span::{DUMMY_SP, Span, Symbol};
 
 use crate::{
     def_id::{FluxDefId, FluxId, MaybeExternId, ResolvedDefId},
-    fhir,
+    fhir::{self, SinkType},
     global_env::GlobalEnv,
     rty::{
         self, AliasReft, Expr, GenericArg,
@@ -287,6 +287,8 @@ pub struct Queries<'genv, 'tcx> {
     lower_late_bound_vars: Cache<LocalDefId, QueryResult<List<ty::BoundVariableKind>>>,
     sort_decl_param_count: Cache<FluxDefId, usize>,
     no_panic: Cache<DefId, bool>,
+    is_sink: Cache<DefId, bool>,
+    sink_for: Cache<DefId, SinkType>,
 }
 
 impl<'genv, 'tcx> Queries<'genv, 'tcx> {
@@ -328,6 +330,8 @@ impl<'genv, 'tcx> Queries<'genv, 'tcx> {
             lower_late_bound_vars: Default::default(),
             sort_decl_param_count: Default::default(),
             no_panic: Default::default(),
+            is_sink: Default::default(),
+            sink_for: Default::default(),
         }
     }
 
@@ -627,6 +631,24 @@ impl<'genv, 'tcx> Queries<'genv, 'tcx> {
                 |_def_id| Ok(rty::StaticInfo::Unknown),
             )
         })
+    }
+
+    pub(crate) fn call_graph(
+        &self,
+        genv: GlobalEnv,
+        def_id: DefId,
+    ) -> QueryResult<flux_cont::CallGraph> {
+        // (VR)TODO: Fix this mess
+        def_id.dispatch_query(
+            genv,
+            self,
+            |def_id| {
+                let def_id = def_id.local_id();
+                Ok(flux_cont::build_call_graph(genv.tcx(), &[def_id.to_def_id()]).call_graph)
+            },
+            |def_id| Some(Ok(flux_cont::build_call_graph(genv.tcx(), &[def_id]).call_graph)),
+            |_| Err(QueryErr::Ignored { def_id }),
+        )
     }
 
     pub(crate) fn no_panic(&self, genv: GlobalEnv, def_id: DefId) -> bool {
@@ -942,6 +964,30 @@ impl<'genv, 'tcx> Queries<'genv, 'tcx> {
         })
     }
 
+    pub(crate) fn is_sink(&self, genv: GlobalEnv, def_id: DefId) -> bool {
+        run_with_cache(&self.is_sink, def_id, || {
+            def_id.dispatch_query(
+                genv,
+                self,
+                |def_id| genv.fhir_attr_map(def_id.local_id()).sink(),
+                |def_id| genv.cstore().is_sink(def_id),
+                |_| false,
+            )
+        })
+    }
+
+    pub(crate) fn sink_for(&self, genv: GlobalEnv, def_id: DefId) -> SinkType {
+        run_with_cache(&self.sink_for, def_id, || {
+            def_id.dispatch_query(
+                genv,
+                self,
+                |def_id| genv.fhir_attr_map(def_id.local_id()).sink_for(),
+                |def_id| genv.cstore().sink_for(def_id),
+                |_| bug!("sink should always have an associated type"),
+            )
+        })
+    }
+
     pub(crate) fn fn_sig(
         &self,
         genv: GlobalEnv,
@@ -951,8 +997,32 @@ impl<'genv, 'tcx> Queries<'genv, 'tcx> {
             def_id.dispatch_query(
                 genv,
                 self,
-                |def_id| (self.providers.fn_sig)(genv, def_id),
-                |def_id| genv.cstore().fn_sig(def_id),
+                |def_id| {
+                    let mut fn_sig = (self.providers.fn_sig)(genv, def_id)?;
+
+                    let specs = genv.collect_specs();
+                    let item_has_specs = item_has_specs(&def_id.resolved_id(), specs);
+                    let is_sink = is_sink(&def_id.resolved_id(), specs);
+                    // instantiate kvars if the fn does not have any spec
+                    if !item_has_specs {
+                        let inner = fn_sig.0.add_kvars(genv, def_id.resolved_id(), is_sink)?;
+                        fn_sig = rty::EarlyBinder(inner);
+                    }
+
+                    Ok(fn_sig)
+                },
+                |def_id| {
+                    let fn_sig = genv.cstore().fn_sig(def_id);
+                    if let Some(Ok(mut sig)) = fn_sig {
+                        if genv.is_sink(def_id) {
+                            let inner = sig.0.add_kvars(genv, def_id, true).ok()?;
+                            sig = rty::EarlyBinder(inner);
+                        }
+                        Some(Ok(sig))
+                    } else {
+                        fn_sig
+                    }
+                },
                 |def_id| {
                     let tcx = genv.tcx();
 
@@ -981,11 +1051,95 @@ impl<'genv, 'tcx> Queries<'genv, 'tcx> {
                         });
                     }
 
+                    let specs = genv.collect_specs();
+                    let item_has_specs = item_has_specs(&def_id, specs);
+                    let is_sink = is_sink(&def_id, specs);
+                    if !item_has_specs {
+                        poly_sig = poly_sig.add_kvars(genv, def_id, is_sink)?;
+                    }
+
                     Ok(rty::EarlyBinder(poly_sig))
                 },
             )
         })
     }
+}
+
+fn is_sink(def_id: &DefId, specs: &crate::Specs) -> bool {
+    fn contains_sink(attrs: &Vec<Attr>) -> bool {
+        for attr in attrs.iter() {
+            if let Attr::Sink(..) = attr {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    let did = match def_id.as_local() {
+        Some(did) => did,
+        None => {
+            // This means the def_id is for some item in an external crate
+            //
+            // This is definitely more nuanced but for now just return false
+            return false;
+        }
+    };
+
+    let owner_id = rustc_hir::OwnerId { def_id: did };
+    if let Some(item) = specs.get_item(owner_id.clone()) {
+        if contains_sink(&item.attrs) {
+            return true;
+        }
+    }
+
+    if let Some(trait_item) = specs.get_trait_item(owner_id.clone()) {
+        if contains_sink(&trait_item.attrs) {
+            return true;
+        }
+    }
+
+    if let Some(impl_item) = specs.get_impl_item(owner_id) {
+        if contains_sink(&impl_item.attrs) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+fn item_has_specs(def_id: &DefId, specs: &crate::Specs) -> bool {
+    let did = match def_id.as_local() {
+        Some(did) => did,
+        None => {
+            // This means the def_id is for some item in an external crate
+            //
+            // This is definitely more nuanced but for now just return true
+            return true;
+        }
+    };
+
+    let owner_id = rustc_hir::OwnerId { def_id: did };
+    if let Some(item) = specs.get_item(owner_id.clone()) {
+        if let flux_syntax::surface::ItemKind::Fn(fn_sig) = &item.kind {
+            if fn_sig.is_some() {
+                return true;
+            }
+        }
+    }
+
+    if let Some(trait_item) = specs.get_trait_item(owner_id.clone()) {
+        if trait_item.sig.is_some() {
+            return true;
+        }
+    }
+
+    if let Some(impl_item) = specs.get_impl_item(owner_id) {
+        if impl_item.sig.is_some() {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /// Logic to *dispatch* a `def_id` to a provider (`local`, `external`, or `default`).

@@ -117,6 +117,7 @@ macro_rules! declare_types {
         type Tag = $tag:ty;
     ) => {
         pub mod fixpoint_generated {
+            #[derive(Clone, PartialEq)]
             pub struct FixpointTypes;
             pub type Expr = $crate::Expr<FixpointTypes>;
             pub type Pred = $crate::Pred<FixpointTypes>;
@@ -158,6 +159,7 @@ pub struct ConstDecl<T: Types> {
 }
 
 #[derive_where(Hash, Debug)]
+#[derive(Clone)]
 pub struct FunDef<T: Types> {
     pub name: T::Var,
     pub sort: FunSort<T>,
@@ -167,12 +169,14 @@ pub struct FunDef<T: Types> {
 }
 
 #[derive_where(Hash, Debug)]
+#[derive(Clone)]
 pub struct FunBody<T: Types> {
     pub args: Vec<T::Var>,
     pub expr: Expr<T>,
 }
 
 #[derive_where(Hash)]
+#[derive(Clone)]
 pub struct Task<T: Types> {
     #[derive_where(skip)]
     pub comments: Vec<String>,
@@ -184,6 +188,14 @@ pub struct Task<T: Types> {
     pub qualifiers: Vec<Qualifier<T>>,
     pub scrape_quals: bool,
     pub solver: SmtSolver,
+    pub cut_kvars: Vec<T::KVar>,
+    pub string_qualifiers: Vec<&'static str>,
+}
+
+impl<T: Types> Task<T> {
+    pub fn add_cut_kvar(&mut self, kvar: T::KVar) {
+        self.cut_kvars.push(kvar);
+    }
 }
 
 #[derive(Clone, Copy, Hash)]
@@ -316,6 +328,67 @@ pub struct KVarDecl<T: Types> {
 }
 
 impl<T: Types> Task<T> {
+    pub fn merge(&mut self, other: Self) {
+        use std::collections::HashSet;
+
+        let seen_comments: HashSet<_> = self.comments.iter().cloned().collect();
+        self.comments.extend(
+            other
+                .comments
+                .into_iter()
+                .filter(|c| !seen_comments.contains(c)),
+        );
+
+        let seen_constants: HashSet<_> = self.constants.iter().map(|c| c.name.clone()).collect();
+        self.constants.extend(
+            other
+                .constants
+                .into_iter()
+                .filter(|c| !seen_constants.contains(&c.name)),
+        );
+
+        let seen_data_decls: HashSet<_> = self.data_decls.iter().map(|d| d.name.clone()).collect();
+        self.data_decls.extend(
+            other
+                .data_decls
+                .into_iter()
+                .filter(|d| !seen_data_decls.contains(&d.name)),
+        );
+
+        let seen_funs: HashSet<_> = self.define_funs.iter().map(|f| f.name.clone()).collect();
+        self.define_funs.extend(
+            other
+                .define_funs
+                .into_iter()
+                .filter(|f| !seen_funs.contains(&f.name)),
+        );
+
+        let seen_kvars: HashSet<_> = self.kvars.iter().map(|k| k.kvid.clone()).collect();
+        self.kvars.extend(
+            other
+                .kvars
+                .into_iter()
+                .filter(|k| !seen_kvars.contains(&k.kvid)),
+        );
+
+        self.cut_kvars.extend(other.cut_kvars);
+
+        match &mut self.constraint {
+            Constraint::Conj(cs) => cs.push(other.constraint),
+            c => *c = Constraint::Conj(vec![c.clone(), other.constraint]),
+        }
+
+        let seen_quals: HashSet<_> = self.qualifiers.iter().map(|q| q.name.clone()).collect();
+        self.qualifiers.extend(
+            other
+                .qualifiers
+                .into_iter()
+                .filter(|q| !seen_quals.contains(&q.name)),
+        );
+
+        self.scrape_quals |= other.scrape_quals;
+    }
+
     pub fn hash_with_default(&self) -> u64 {
         let mut hasher = DefaultHasher::new();
         self.hash(&mut hasher);
@@ -471,6 +544,8 @@ pub enum ThyFunc {
     MapSelect,
     /// Store a key value pair in a map
     MapStore,
+    /// Create a constant map where every key maps to a value
+    MapConst,
 }
 
 impl ThyFunc {
@@ -574,6 +649,7 @@ impl fmt::Display for ThyFunc {
             ThyFunc::MapDefault => write!(f, "Map_default"),
             ThyFunc::MapSelect => write!(f, "Map_select"),
             ThyFunc::MapStore => write!(f, "Map_store"),
+            ThyFunc::MapConst => unreachable!(),
         }
     }
 }

@@ -7,7 +7,6 @@ use flux_middle::{
     FixpointQueryKind,
     def_id::MaybeExternId,
     global_env::GlobalEnv,
-    metrics::{self, Metric},
     queries::{QueryErr, QueryResult},
     query_bug,
     rty::{
@@ -20,6 +19,8 @@ use flux_middle::{
     },
 };
 use itertools::{Itertools, izip};
+use liquid_fixpoint::Task;
+use rustc_data_structures::fx::FxIndexMap;
 use rustc_hir::def_id::{DefId, LocalDefId};
 use rustc_macros::extension;
 use rustc_middle::{
@@ -33,7 +34,7 @@ use crate::{
     evars::{EVarState, EVarStore},
     fixpoint_encoding::{
         Answer, Backend, FixQueryCache, FixpointCtxt, KVarEncoding, KVarGen, KVarSolutions,
-        lean_task_key,
+        fixpoint::FixpointTypes, lean_task_key,
     },
     lean_encoding::log_proof,
     projections::NormalizeExt as _,
@@ -82,7 +83,7 @@ pub enum ConstrReason {
     Overflow,
     Underflow,
     Subtype(SubtypeReason),
-    NoPanic(DefId),
+    // NoPanic(DefId),
     Other,
 }
 
@@ -206,7 +207,9 @@ impl<'genv, 'tcx> InferCtxtRoot<'genv, 'tcx> {
         encoding: KVarEncoding,
     ) -> Expr {
         let inner = &mut *self.inner.borrow_mut();
-        inner.kvars.fresh(binders, scope.iter(), encoding)
+        inner
+            .kvars
+            .fresh(self.genv, binders, scope.iter(), encoding)
     }
 
     pub fn execute_lean_query(
@@ -255,12 +258,14 @@ impl<'genv, 'tcx> InferCtxtRoot<'genv, 'tcx> {
 
     pub fn execute_fixpoint_query(
         self,
-        cache: &mut FixQueryCache,
+        _cache: &mut FixQueryCache,
         def_id: MaybeExternId,
         kind: FixpointQueryKind,
+        def_id_to_cstr: &mut FxIndexMap<DefId, Task<FixpointTypes>>,
+        def_id_to_fixpoint_cstr: &mut FxIndexMap<DefId, FixpointCtxt<'genv, 'tcx, Tag>>,
     ) -> QueryResult<Answer<Tag>> {
         let inner = self.inner.into_inner();
-        let kvars = inner.kvars;
+        let mut kvars = inner.kvars;
         let evars = inner.evars;
 
         let ext = kind.ext();
@@ -272,7 +277,7 @@ impl<'genv, 'tcx> InferCtxtRoot<'genv, 'tcx> {
         if config::dump_constraint() {
             dbg::dump_item_info(self.genv.tcx(), def_id.resolved_id(), ext, &refine_tree).unwrap();
         }
-        refine_tree.simplify(self.genv);
+        // refine_tree.simplify(self.genv);
         if config::dump_constraint() {
             let simp_ext = format!("simp.{ext}");
             dbg::dump_item_info(self.genv.tcx(), def_id.resolved_id(), simp_ext, &refine_tree)
@@ -284,20 +289,41 @@ impl<'genv, 'tcx> InferCtxtRoot<'genv, 'tcx> {
             flux_config::SmtSolver::CVC5 => liquid_fixpoint::SmtSolver::CVC5,
         };
 
+        // Set any kvars that were added by the fn sig nonsense that's going on
+        for (kvar_id, kvar_info) in self.genv.all_def_id_kvars() {
+            let kvid = rty::KVid::from(kvar_id);
+            let self_args = kvar_info.self_args;
+            let sorts = kvar_info.sorts;
+            kvars.add_kvars_from_fn_sig(kvid, self_args, sorts);
+        }
+
         let mut fcx = FixpointCtxt::new(self.genv, def_id, kvars, Backend::Fixpoint);
         let cstr = refine_tree.to_fixpoint(&mut fcx)?;
 
         // skip checking trivial constraints
-        let count = cstr.concrete_head_count();
-        metrics::incr_metric(Metric::CsTotal, count as u32);
-        if count == 0 {
-            metrics::incr_metric_if(kind.is_body(), Metric::FnTrivial);
-            return Ok(Answer::trivial());
-        }
+        // let count = cstr.concrete_head_count();
+        // metrics::incr_metric(Metric::CsTotal, count as u32);
+        // if count == 0 {
+        //     metrics::incr_metric_if(kind.is_body(), Metric::FnTrivial);
+        //     return Ok(Answer::trivial());
+        // }
 
         let task = fcx.create_task(def_id, cstr, self.opts.scrape_quals, backend)?;
-        let result = fcx.run_task(cache, def_id, kind, &task)?;
-        Ok(fcx.result_to_answer(result))
+
+        let did = def_id.resolved_id();
+
+        // VR: HACK for now - never actually run any of this - just save the fixpoint context
+        // let res = if task.should_execute {
+        //     let result = fcx.run_task(cache, def_id, kind, &task)?;
+        //     fcx.result_to_answer(result)
+        // } else {
+        //  Answer::trivial()
+        // };
+
+        def_id_to_cstr.insert(did, task.clone());
+        def_id_to_fixpoint_cstr.insert(did, fcx);
+
+        Ok(Answer::trivial())
     }
 
     pub fn split(self) -> (RefineTree, KVarGen) {
@@ -384,13 +410,17 @@ impl<'infcx, 'genv, 'tcx> InferCtxt<'infcx, 'genv, 'tcx> {
         encoding: KVarEncoding,
     ) -> Expr {
         let inner = &mut *self.inner.borrow_mut();
-        inner.kvars.fresh(binders, scope.iter(), encoding)
+        inner
+            .kvars
+            .fresh(self.genv, binders, scope.iter(), encoding)
     }
 
     /// Generate a fresh kvar in the current scope. See [`KVarGen::fresh`].
     pub fn fresh_kvar(&self, binders: &[BoundVariableKinds], encoding: KVarEncoding) -> Expr {
         let inner = &mut *self.inner.borrow_mut();
-        inner.kvars.fresh(binders, self.cursor.vars(), encoding)
+        inner
+            .kvars
+            .fresh(self.genv, binders, self.cursor.vars(), encoding)
     }
 
     fn fresh_evar(&self) -> Expr {

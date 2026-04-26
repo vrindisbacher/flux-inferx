@@ -460,24 +460,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "flux-bin"
-version = "0.1.0"
-dependencies = [
- "anstyle",
- "anyhow",
- "cargo_metadata",
- "clap",
- "config",
- "flux-config",
- "home",
- "itertools 0.14.0",
- "serde",
- "serde_json",
- "tempfile",
- "toml",
-]
-
-[[package]]
 name = "flux-common"
 version = "0.1.0"
 dependencies = [
@@ -495,6 +477,23 @@ dependencies = [
  "globset",
  "serde",
  "toml",
+ "tracing",
+]
+
+[[package]]
+name = "flux-cont"
+version = "0.1.0"
+dependencies = [
+ "flux-common",
+ "flux-config",
+ "flux-errors",
+ "flux-macros",
+ "flux-rustc-bridge",
+ "itertools 0.14.0",
+ "liquid-fixpoint",
+ "rustc-hash",
+ "serde",
+ "serde_json",
  "tracing",
 ]
 
@@ -526,6 +525,7 @@ version = "0.1.0"
 dependencies = [
  "flux-common",
  "flux-config",
+ "flux-cont",
  "flux-desugar",
  "flux-errors",
  "flux-fhir-analysis",
@@ -537,6 +537,7 @@ dependencies = [
  "flux-rustc-bridge",
  "flux-syntax",
  "itertools 0.14.0",
+ "liquid-fixpoint",
  "serde",
  "serde_json",
  "tracing",
@@ -590,6 +591,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "flux-inferx-bin"
+version = "0.1.0"
+dependencies = [
+ "anstyle",
+ "anyhow",
+ "cargo_metadata",
+ "clap",
+ "config",
+ "flux-config",
+ "home",
+ "itertools 0.14.0",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "toml",
+]
+
+[[package]]
 name = "flux-macros"
 version = "0.1.0"
 dependencies = [
@@ -630,6 +649,7 @@ dependencies = [
  "flux-arc-interner",
  "flux-common",
  "flux-config",
+ "flux-cont",
  "flux-errors",
  "flux-macros",
  "flux-rustc-bridge",

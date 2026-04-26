@@ -3,12 +3,15 @@ use std::rc::Rc;
 use rustc_hir::def_id::CrateNum;
 use rustc_span::def_id::DefId;
 
-use crate::{def_id::FluxDefId, queries::QueryResult, rty};
+use crate::{def_id::FluxDefId, fhir::SinkType, queries::QueryResult, rty};
 
 pub type OptResult<T> = Option<QueryResult<T>>;
 
 pub trait CrateStore {
     fn fn_sig(&self, def_id: DefId) -> OptResult<rty::EarlyBinder<rty::PolyFnSig>>;
+    fn is_sink(&self, def_id: DefId) -> Option<bool>;
+    fn sink_for(&self, def_id: DefId) -> Option<SinkType>;
+
     fn adt_def(&self, def_id: DefId) -> OptResult<rty::AdtDef>;
     fn adt_sort_def(&self, def_id: DefId) -> OptResult<rty::AdtSortDef>;
     fn generics_of(&self, def_id: DefId) -> OptResult<rty::Generics>;

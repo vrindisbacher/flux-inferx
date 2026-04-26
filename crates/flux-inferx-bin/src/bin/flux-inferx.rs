@@ -3,7 +3,7 @@
 use std::{env, process::Command};
 
 use anyhow::Result;
-use flux_bin::utils::{
+use flux_inferx_bin::utils::{
     LIB_PATH, flux_sysroot_dir, get_flux_driver_path, get_rust_lib_path, get_rust_sysroot,
     get_rust_toolchain, prepend_path_to_env_var, print_version_and_exit,
 };

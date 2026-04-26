@@ -15,10 +15,7 @@ impl<'genv, 'tcx, Tag> FixpointCtxt<'genv, 'tcx, Tag>
 where
     Tag: std::hash::Hash + Eq + Copy,
 {
-    pub(crate) fn fixpoint_to_solution(
-        &mut self,
-        sol: &FixpointSolution,
-    ) -> rty::Binder<rty::Expr> {
+    pub fn fixpoint_to_solution(&mut self, sol: &FixpointSolution) -> rty::Binder<rty::Expr> {
         let mut vars = vec![];
         let mut sorts = vec![];
         for (var, sort) in &sol.0 {
@@ -54,9 +51,14 @@ where
                 Ok(rty::SortCtor::User(def_id))
             }
             fixpoint::SortCtor::Data(fixpoint::DataSort::Adt(adt_id)) => {
-                let def_id = self.scx.adt_sorts[adt_id.as_usize()];
+                let (def_id, _) = self
+                    .scx
+                    .adt_sorts
+                    .iter()
+                    .find(|(_, aid)| **aid == adt_id.as_usize())
+                    .expect("Unknown adt id");
                 let Ok(adt_sort_def) = self.genv.adt_sort_def_of(def_id) else {
-                    return Err(FixpointParseError::UnknownAdt(def_id));
+                    return Err(FixpointParseError::UnknownAdt(*def_id));
                 };
                 Ok(rty::SortCtor::Adt(adt_sort_def))
             }
@@ -162,8 +164,13 @@ where
                         Err(FixpointParseError::NoLocalVar(*fname))
                     }
                     fixpoint::Var::DataCtor(adt_id, variant_idx) => {
-                        let def_id = self.scx.adt_sorts[adt_id.as_usize()];
-                        Ok(rty::Expr::ctor_enum(def_id, *variant_idx))
+                        let (def_id, _) = self
+                            .scx
+                            .adt_sorts
+                            .iter()
+                            .find(|(_, aid)| **aid == adt_id.as_usize())
+                            .expect("unknown adt_id"); // [adt_id.as_usize()];
+                        Ok(rty::Expr::ctor_enum(*def_id, *variant_idx))
                     }
                     fixpoint::Var::TupleCtor { .. }
                     | fixpoint::Var::TupleProj { .. }
@@ -197,10 +204,16 @@ where
                     fixpoint::Expr::Var(fixpoint::Var::DataProj { adt_id, field }) => {
                         if fargs.len() == 1 {
                             let earg = self.fixpoint_to_expr(&fargs[0])?;
+                            let (def_id, _) = self
+                                .scx
+                                .adt_sorts
+                                .iter()
+                                .find(|(_, aid)| **aid == adt_id.as_usize())
+                                .expect("unknown adt_id"); // [adt_id.as_usize()];
                             Ok(rty::Expr::field_proj(
                                 earg,
                                 rty::FieldProj::Adt {
-                                    def_id: self.scx.adt_sorts[adt_id.as_usize()],
+                                    def_id: *def_id, // self.scx.adt_sorts[adt_id.as_usize()],
                                     field: *field,
                                 },
                             ))
@@ -395,7 +408,14 @@ where
             fixpoint::Expr::IsCtor(var, fe) => {
                 let (def_id, variant_idx) = match var {
                     fixpoint::Var::DataCtor(adt_id, variant_idx) => {
-                        let def_id = self.scx.adt_sorts[adt_id.as_usize()];
+                        let (def_id, _): (DefId, usize) = self
+                            .scx
+                            .adt_sorts
+                            .iter()
+                            .find(|(_, aid)| **aid == adt_id.as_usize())
+                            .map(|(a, b)| (*a, *b))
+                            .expect("unknown adt_id");
+                        // let def_id = self.scx.adt_sorts[adt_id.as_usize()];
                         Ok((def_id, *variant_idx))
                     }
                     _ => Err(FixpointParseError::WrongVarInIsCtor(*var)),

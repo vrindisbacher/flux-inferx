@@ -42,9 +42,41 @@ use rustc_span::{ErrorGuaranteed, Span, Symbol, symbol::Ident};
 
 use crate::{
     def_id::{FluxDefId, FluxLocalDefId, MaybeExternId},
+    fhir,
     global_env::GlobalEnv,
     rty::QualifierKind,
 };
+
+#[derive(Debug, Clone, Copy, Encodable, Decodable, Hash, PartialEq, Eq)]
+pub enum SinkType {
+    // Dynamo Operations
+    DynamoPut,
+    DynamoGet,
+    DynamoDelete,
+    DynamoUpdate,
+    DynamoQuery,
+    // S3 Operations
+    S3PutObject,
+    S3GetObject,
+    S3DeleteObject,
+    Unknown,
+}
+
+impl Into<SinkType> for flux_syntax::surface::SinkType {
+    fn into(self) -> SinkType {
+        match self {
+            flux_syntax::surface::SinkType::DynamoPut => SinkType::DynamoPut,
+            flux_syntax::surface::SinkType::DynamoGet => SinkType::DynamoGet,
+            flux_syntax::surface::SinkType::DynamoDelete => SinkType::DynamoDelete,
+            flux_syntax::surface::SinkType::DynamoUpdate => SinkType::DynamoUpdate,
+            flux_syntax::surface::SinkType::DynamoQuery => SinkType::DynamoQuery,
+            flux_syntax::surface::SinkType::Unknown => SinkType::Unknown,
+            flux_syntax::surface::SinkType::S3PutObject => SinkType::S3PutObject,
+            flux_syntax::surface::SinkType::S3GetObject => SinkType::S3GetObject,
+            flux_syntax::surface::SinkType::S3DeleteObject => SinkType::S3DeleteObject,
+        }
+    }
+}
 
 pub enum Attr {
     Trusted(Trusted),
@@ -54,6 +86,8 @@ pub enum Attr {
     ShouldFail,
     InferOpts(PartialInferOpts),
     NoPanic,
+    Source,
+    Sink(SinkType),
 }
 
 #[derive(Clone, Copy, Default)]
@@ -74,6 +108,21 @@ impl AttrMap<'_> {
         self.attrs
             .iter()
             .find_map(|attr| if let Attr::Ignore(ignored) = *attr { Some(ignored) } else { None })
+    }
+
+    pub(crate) fn source(&self) -> bool {
+        self.attrs.iter().any(|attr| matches!(attr, Attr::Source))
+    }
+
+    pub(crate) fn sink(&self) -> bool {
+        self.attrs.iter().any(|attr| matches!(attr, Attr::Sink(..)))
+    }
+
+    pub(crate) fn sink_for(&self) -> fhir::SinkType {
+        self.attrs
+            .iter()
+            .find_map(|attr| if let Attr::Sink(sink_type) = attr { Some(*sink_type) } else { None })
+            .unwrap_or_else(|| bug!("Sink should always have an associated sink type"))
     }
 
     pub(crate) fn trusted(&self) -> Option<Trusted> {

@@ -163,6 +163,7 @@ pub fn name_of_thy_func(func: liquid_fixpoint::ThyFunc) -> Option<&'static str> 
         ThyFunc::MapDefault => "map_default",
         ThyFunc::MapSelect => "map_select",
         ThyFunc::MapStore => "map_store",
+        ThyFunc::MapConst => "arr_const_s",
     };
     Some(name)
 }
@@ -360,6 +361,18 @@ fn sort_of_thy_func(func: liquid_fixpoint::ThyFunc) -> Option<rty::PolyFuncSort>
                         Sort::app(Map, List::from_arr([Var(param0), Var(param1)])),
                         Var(param0),
                         Var(param1),
+                    ],
+                    Sort::app(Map, List::from_arr([Var(param0), Var(param1)])),
+                ),
+            )
+        }
+        ThyFunc::MapConst => {
+            // ∀k,v. v -> Map<k, v>
+            rty::PolyFuncSort::new(
+                List::from_arr([SortParamKind::Sort, SortParamKind::Sort]),
+                rty::FuncSort::new(
+                    vec![
+                        Var(param1), // the value (V)
                     ],
                     Sort::app(Map, List::from_arr([Var(param0), Var(param1)])),
                 ),

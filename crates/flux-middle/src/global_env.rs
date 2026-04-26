@@ -1,12 +1,13 @@
-use std::{alloc, path::PathBuf, ptr, rc::Rc, slice};
+use std::{alloc, cell::RefCell, path::PathBuf, ptr, rc::Rc, slice};
 
 use flux_arc_interner::List;
 use flux_common::{bug, result::ErrorEmitter};
 use flux_config as config;
+use flux_cont::CallGraph;
 use flux_errors::FluxSession;
 use flux_rustc_bridge::{self, lowering::Lower, mir, ty};
 use flux_syntax::symbols::sym;
-use rustc_data_structures::unord::UnordSet;
+use rustc_data_structures::{fx::FxIndexMap, unord::UnordSet};
 use rustc_hir::{
     LangItem,
     def::DefKind,
@@ -27,10 +28,19 @@ use crate::{
     queries::{DispatchKey, Providers, Queries, QueryErr, QueryResult},
     query_bug,
     rty::{
-        self, QualifierKind,
+        self, KVar, QualifierKind,
         refining::{Refine as _, Refiner},
     },
 };
+
+#[derive(Debug, Clone)]
+pub struct KvarInfo {
+    /// The sorts of the kvar in the order in which they appear in the
+    /// arguments.
+    pub self_args: usize,
+    pub sorts: Vec<rty::Sort>,
+}
+pub type KvarMap = FxIndexMap<u32, KvarInfo>;
 
 #[derive(Clone, Copy)]
 pub struct GlobalEnv<'genv, 'tcx> {
@@ -44,6 +54,9 @@ struct GlobalEnvInner<'genv, 'tcx> {
     cstore: Box<CrateStoreDyn>,
     queries: Queries<'genv, 'tcx>,
     tempdir: TempDir,
+    kvars: RefCell<KvarMap>,
+    kvid: RefCell<rty::KVid>,
+    sink_kvars: RefCell<FxIndexMap<DefId, KVar>>,
 }
 
 impl<'tcx> GlobalEnv<'_, 'tcx> {
@@ -59,7 +72,11 @@ impl<'tcx> GlobalEnv<'_, 'tcx> {
         // files in it.
         let tempdir = TempDir::new_in(lean_parent_dir(tcx)).unwrap();
         let queries = Queries::new(providers);
-        let inner = GlobalEnvInner { tcx, sess, cstore, arena, queries, tempdir };
+        let kvars = Default::default();
+        let kvid = RefCell::new(rty::KVid::from(0_usize));
+        let sink_kvars = RefCell::new(Default::default());
+        let inner =
+            GlobalEnvInner { tcx, sess, cstore, arena, queries, tempdir, kvars, kvid, sink_kvars };
         f(GlobalEnv { inner: &inner })
     }
 }
@@ -141,6 +158,44 @@ impl<'genv, 'tcx> GlobalEnv<'genv, 'tcx> {
 
     pub fn def_kind(&self, def_id: impl IntoQueryParam<DefId>) -> DefKind {
         self.tcx().def_kind(def_id.into_query_param())
+    }
+
+    pub fn set_sink_kvar_for(&self, def_id: DefId, kvar: KVar) {
+        let mut sink_kvar = self.inner.sink_kvars.borrow_mut();
+        sink_kvar.insert(def_id, kvar);
+    }
+
+    pub fn get_sink_kvar_for(&self, def_id: DefId) -> Option<KVar> {
+        let inner = self.inner.sink_kvars.borrow_mut();
+        inner.get(&def_id).cloned()
+    }
+
+    pub fn feed_kvars(&self, kv: KvarMap) {
+        let mut map = self.inner.kvars.borrow_mut();
+        for (key, val) in kv {
+            map.insert(key, val);
+        }
+    }
+
+    pub fn all_def_id_kvars(&self) -> Vec<(u32, KvarInfo)> {
+        let map = self.inner.kvars.borrow();
+        map.iter().map(|(k, v)| (*k, v.clone())).collect()
+    }
+
+    // reserves n kvids in the global kvar allocator so that there
+    // are no name clashes - NOTE this is used by `declare` beacuse
+    // of the `Conj` encoding for Kvars where a single kvar is `remapped`
+    // to a different kvar
+    pub fn reserve_kvids(&self, n: usize) -> rty::KVid {
+        let start = *self.inner.kvid.borrow();
+        *self.inner.kvid.borrow_mut() += n;
+        start
+    }
+
+    pub fn get_next_kvid(&self) -> rty::KVid {
+        let res = *self.inner.kvid.borrow();
+        *self.inner.kvid.borrow_mut() += 1;
+        res
     }
 
     /// Allocates space to store `cap` elements of type `T`.
@@ -456,6 +511,13 @@ impl<'genv, 'tcx> GlobalEnv<'genv, 'tcx> {
         self.inner.queries.lower_late_bound_vars(self, def_id)
     }
 
+    /// Get the call graph for a function
+    pub fn call_graph(self, def_id: impl IntoQueryParam<DefId>) -> QueryResult<CallGraph> {
+        self.inner
+            .queries
+            .call_graph(self, def_id.into_query_param())
+    }
+
     /// Whether the function is marked with `#[flux::no_panic]`
     pub fn no_panic(self, def_id: impl IntoQueryParam<DefId>) -> bool {
         self.inner.queries.no_panic(self, def_id.into_query_param())
@@ -570,12 +632,31 @@ impl<'genv, 'tcx> GlobalEnv<'genv, 'tcx> {
     }
 
     /// Transitively follow the parent-chain of `def_id` to find the first containing item with an
-    /// explicit `#[flux::trusted(..)]` annotation and return whether that item is trusted or not.
+    /// explicit `#[flux::source]` annotation and return whether that item is a source or not.
     /// If no explicit annotation is found, return `false`.
     pub fn trusted(self, def_id: LocalDefId) -> bool {
         self.traverse_parents(def_id, |did| self.fhir_attr_map(did).trusted())
             .map(|trusted| trusted.to_bool())
             .unwrap_or_else(config::trusted_default)
+    }
+
+    /// Transitively follow the parent-chain of `def_id` to find the first containing item with an
+    /// explicit `#[flux::source]` annotation and return whether that item is a source or not.
+    /// If no explicit annotation is found, return `false`.
+    pub fn is_source(self, def_id: LocalDefId) -> bool {
+        self.fhir_attr_map(def_id).source()
+    }
+
+    /// Transitively follow the parent-chain of `def_id` to find the first containing item with an
+    /// explicit `#[flux::sink]` annotation and return whether that item is a sink or not.
+    /// If no explicit annotation is found, return `false`.
+    ///
+    pub fn is_sink(self, def_id: impl IntoQueryParam<DefId>) -> bool {
+        self.inner.queries.is_sink(self, def_id.into_query_param())
+    }
+
+    pub fn sink_for(self, def_id: impl IntoQueryParam<DefId>) -> fhir::SinkType {
+        self.inner.queries.sink_for(self, def_id.into_query_param())
     }
 
     pub fn trusted_impl(self, def_id: LocalDefId) -> bool {

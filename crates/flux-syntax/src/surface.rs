@@ -612,6 +612,21 @@ impl From<bool> for Ignored {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum SinkType {
+    // Dynamo Operations
+    DynamoPut,
+    DynamoGet,
+    DynamoDelete,
+    DynamoUpdate,
+    DynamoQuery,
+    // S3 Operations
+    S3PutObject,
+    S3GetObject,
+    S3DeleteObject,
+    Unknown,
+}
+
 /// An attribute attaches metadata to an item.
 ///
 /// Note that some of these attributes correspond to a Rust attribute, but some don't. For example,
@@ -640,6 +655,10 @@ pub enum Attr {
     InferOpts(PartialInferOpts),
     /// A `#[no_panic]` attribute
     NoPanic,
+    /// A `#[source]` attribute
+    Source,
+    /// A `#[sink]` attribute
+    Sink(SinkType),
 }
 
 #[derive(Debug)]

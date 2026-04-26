@@ -10,7 +10,7 @@ use crate::cargo_style;
 #[command(styles = cargo_style::CLAP_STYLING)]
 pub enum Cli {
     /// Flux's integration with Cargo
-    Flux {
+    FluxInferx {
         #[command(flatten)]
         check_opts: CheckOpts,
 
@@ -32,7 +32,7 @@ pub enum CargoFluxCommand {
     /// Check a local package and its dependencies for errors using Flux.
     /// This is the default command when no subcommand is provided.
     Check(CheckOpts),
-    /// Remove artifacts that cargo-flux has generated in the past
+    /// Remove artifacts that cargo-flux-inferx has generated in the past
     Clean(CleanOpts),
 }
 

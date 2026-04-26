@@ -1,10 +1,14 @@
-use std::path::Path;
+use std::{collections::HashMap, path::Path};
 
 use flux_common::{bug, cache::QueryCache, iter::IterExt, result::ResultExt};
 use flux_config::{self as config};
 use flux_errors::FluxSession;
 use flux_infer::{
-    fixpoint_encoding::{FixQueryCache, LeanStatus, lean_task_key},
+    fixpoint_encoding::{
+        FixQueryCache, FixpointCtxt, KVarDecl, KVarEncoding,
+        fixpoint::{self, Task},
+    },
+    infer::Tag,
     lean_encoding,
 };
 use flux_metadata::CStore;
@@ -15,15 +19,20 @@ use flux_middle::{
     global_env::GlobalEnv,
     metrics::{self, Metric, TimingKind},
     queries::{Providers, QueryResult},
-    rty::StaticInfo,
+    rty::{StaticInfo, fold::TypeFoldable},
 };
 use flux_refineck as refineck;
+use liquid_fixpoint::FixpointStatus;
 use rustc_borrowck::consumers::ConsumerOptions;
+use rustc_data_structures::{
+    fx::{FxIndexMap, FxIndexSet},
+    snapshot_map::SnapshotMap,
+};
 use rustc_driver::{Callbacks, Compilation};
 use rustc_errors::ErrorGuaranteed;
 use rustc_hir::{
     def::{CtorKind, DefKind},
-    def_id::{LOCAL_CRATE, LocalDefId},
+    def_id::{DefId, LOCAL_CRATE, LocalDefId},
 };
 use rustc_interface::interface::Compiler;
 use rustc_middle::{query, ty::TyCtxt};
@@ -94,49 +103,496 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
 
         let mut ck = CrateChecker::new(genv);
 
-        // Iterate over all def ids including dummy items for extern specs
-        let result = genv
-            .tcx()
-            .iter_local_def_id()
-            .try_for_each_exhaust(|def_id| ck.check_def_catching_bugs(def_id));
+        let (sources, mut sinks): (FxIndexSet<DefId>, FxIndexSet<DefId>) =
+            genv.tcx().iter_local_def_id().fold(
+                (FxIndexSet::default(), FxIndexSet::default()),
+                |(mut sources, mut sinks), local_def_id| {
+                    if genv.tcx().def_kind(local_def_id).is_fn_like() {
+                        if genv.is_source(local_def_id) {
+                            sources.insert(local_def_id.to_def_id());
+                        }
+                        if genv.is_sink(local_def_id) {
+                            sinks.insert(local_def_id.to_def_id());
+                        }
+                    }
+                    (sources, sinks)
+                },
+            );
 
-        if config::lean().is_check() || config::lean().is_emit() {
-            lean_encoding::finalize(genv)
-                .unwrap_or_else(|err| bug!("error running lean-check {err:?}"));
+        let mut source_call_graph = flux_cont::CallGraph::new();
+        for source in sources.iter() {
+            let cg = genv.call_graph(source).expect("Could not build call graph");
+            source_call_graph.merge(cg);
         }
 
-        let lean_result = if config::lean().is_check() {
-            genv.iter_local_def_id().try_for_each_exhaust(|def_id| {
-                if genv.proven_externally(def_id).is_some() {
-                    let key = lean_task_key(genv.tcx(), def_id.to_def_id());
-                    // Skip proof check if previously verified successfully.
-                    if config::is_cache_enabled()
-                        && ck
-                            .cache
-                            .lookup_by_key(&key)
-                            .map(|r| matches!(r.lean_status, LeanStatus::Valid))
-                            .unwrap_or(false)
-                    {
-                        return Ok(());
-                    }
-                    lean_encoding::check_proof(genv, def_id.to_def_id())?;
-                    // Mark as valid in cache so future runs skip re-verification.
-                    ck.cache
-                        .update_result_by_key(&key, |r| r.lean_status = LeanStatus::Valid);
-                    Ok(())
-                } else {
-                    Ok(())
+        // check non-locals in call graph for sinks
+        for (_def_id, callees) in &source_call_graph.inner {
+            for callee in callees {
+                if genv.is_sink(callee) {
+                    sinks.insert(*callee);
                 }
-            })
-        } else {
-            Ok(())
-        };
+            }
+        }
 
-        ck.cache.save().unwrap_or(());
+        for local_def_id in genv.tcx().iter_local_def_id() {
+            let def_id = genv.maybe_extern_id(local_def_id);
+            let _ = trigger_queries(genv, def_id);
+        }
+
+        let mut crash_log: Vec<(DefId, String)> = Vec::new();
+        let mut solution_log = Vec::new();
+
+        for source in sources.iter() {
+            // clear def ids and fixpoint context maps for each source
+            ck.def_id_to_cstr_map.clear();
+            ck.def_id_to_fixpoint_ctx.clear();
+
+            let mut paths_to_check = Vec::new();
+
+            // accumulate set of sinks that should be checked for ** THIS ** specific source
+            let mut sinks_to_check = FxIndexSet::default();
+            for sink in sinks.iter() {
+                let paths = source_call_graph.get_all_paths_from_to(*source, *sink);
+                if paths.len() > 0 {
+                    sinks_to_check.insert(*sink);
+                    paths_to_check.extend(paths);
+                }
+            }
+
+            let def_ids_to_check =
+                paths_to_check
+                    .iter()
+                    .flatten()
+                    .fold(FxIndexSet::default(), |mut acc, def_id| {
+                        match def_id.as_local() {
+                            Some(local) => {
+                                acc.insert(local);
+                            }
+                            None => {}
+                        }
+                        acc
+                    });
+
+            // get all transitive callees of the functions in the paths
+            let all_def_ids: Vec<DefId> = def_ids_to_check.iter().map(|l| l.to_def_id()).collect();
+            let additional_callees = source_call_graph.transitive_callees(&all_def_ids);
+
+            let all_to_check: FxIndexSet<LocalDefId> = def_ids_to_check
+                .into_iter()
+                .chain(
+                    additional_callees
+                        .into_iter()
+                        .filter_map(|def_id| def_id.as_local()),
+                )
+                .collect();
+
+            let _ = all_to_check
+                .into_iter()
+                .try_for_each_exhaust(|def_id| ck.check_def_catching_bugs(def_id));
+
+            let mut tasks = ck.def_id_to_cstr_map.clone().into_iter().map(|(_, t)| t);
+
+            if let Some(mut mega_task) = tasks.next() {
+                // TODO: Fix merging constants so that they are globally 
+                // defined and we don't have potential clashes. 
+                // Right now they are all created locally from idx 0
+                // and we could have potential mismatches
+                for task in tasks {
+                    mega_task.merge(task);
+                }
+
+                let mut local_sink_kvar_map = HashMap::new();
+                for sink in sinks_to_check.iter() {
+                    let sink_kvar = genv
+                        .get_sink_kvar_for(*sink)
+                        .unwrap_or_else(|| bug!("Each sink should have a stored kvar, but sink {sink:?} did not have one."));
+
+                    local_sink_kvar_map.insert(sink, sink_kvar.clone());
+
+                    let fixpoint_kvid = fixpoint::KVid::from_u32(sink_kvar.kvid.as_u32());
+                    let local = fixpoint::LocalVar::from_u32(9999);
+
+                    let sort = mega_task
+                        .kvars
+                        .iter()
+                        .find(|k| k.kvid == fixpoint_kvid)
+                        .map(|k| k.sorts[0].clone())
+                        .unwrap_or_else(|| bug!("Could not get kvar sort for kvar: {fixpoint_kvid:?}"));
+
+                    let bind = fixpoint::Bind {
+                        name: fixpoint::Var::Local(local),
+                        sort,
+                        pred: fixpoint::Pred::KVar(
+                            fixpoint_kvid,
+                            vec![fixpoint::Expr::Var(fixpoint::Var::Local(local))],
+                        ),
+                    };
+
+                    let trivial = fixpoint::Constraint::Pred(
+                        fixpoint::Pred::Expr(fixpoint::Expr::Atom(
+                            fixpoint::BinRel::Lt,
+                            Box::new([fixpoint::Expr::int(10), fixpoint::Expr::int(11)]),
+                        )),
+                        None,
+                    );
+
+                    let consumer = fixpoint::Constraint::ForAll(bind, Box::new(trivial));
+
+                    let existing =
+                        std::mem::replace(&mut mega_task.constraint, fixpoint::Constraint::TRUE);
+                    mega_task.constraint = fixpoint::Constraint::Conj(vec![existing, consumer]);
+                }
+
+                let verification_result = match mega_task.run() {
+                    Ok(r) => r,
+                    Err(err) => {
+                        // println!("{mega_task}");
+                        // bug!();
+                        crash_log.push((*source, format!("mega_task run failed in mono phase: {err}")));
+                        continue;
+                    }
+                };
+
+                println!("CHECKING SOURCE: {source:?}");
+
+                if let FixpointStatus::Crash(ref crash_reason) = verification_result.status {
+                        // println!("FAILED FOR {source:?}");
+                        // println!("{mega_task}");
+                        // bug!();
+                    crash_log.push((*source, format!("FixpointStatus::Crash in mono phase: {crash_reason:?}")));
+                    continue;
+                }
+
+                let map_len = ck.def_id_to_cstr_map.len();
+                let mut ctxs = ck.def_id_to_fixpoint_ctx.drain(0..map_len).map(|(_, c)| c);
+
+                if let Some(mut base_fcx) = ctxs.next() {
+                    for ctx in ctxs {
+                        base_fcx.merge(ctx);
+                    }
+
+                    let kvar_solutions =
+                        base_fcx.parse_kvar_solutions(&verification_result.non_cuts_solution);
+
+                    for (sink_def_id, sink_kvar) in local_sink_kvar_map.iter() {
+                        let kvid = flux_infer::fixpoint_encoding::fixpoint::KVid::from_u32(
+                            sink_kvar.kvid.as_u32(),
+                        );
+                        let sol = kvar_solutions.get(&kvid).unwrap_or_else(|| {
+                            bug!("Sink KVar had no solution in mono constraint")
+                        });
+
+                        use std::panic::AssertUnwindSafe;
+                        let res = match flux_common::bug::catch_bugs("", AssertUnwindSafe(||
+                            base_fcx.fixpoint_to_solution(sol))) {
+                                Ok(r) => r,
+                                Err(e) => {
+                                    crash_log.push((*source, format!("Crashed turning kvar solution to rty expr for source: {source:?} -> {sink_def_id:?}. The error was: {e:?}")));
+                                    continue;
+                                }
+                            };
+                        let kvar_sort = res.vars()[0].expect_sort().clone();
+                        let simplified_sol = res
+                            .skip_binder_ref()
+                            .simplify(&SnapshotMap::default())
+                            .normalize(genv);
+                        println!("CONVERTING TO DNF");
+                        let disjuncts = simplified_sol.to_dnf();
+                        println!("DONE");
+
+                        let mut constraints = Vec::new();
+
+                        let disjuncts: Vec<_> = disjuncts
+                            .into_iter()
+                            .map(|d| d.simplify(&SnapshotMap::default()))
+                            .filter(|d| !d.is_trivially_false())
+                            .collect();
+
+                        let mut fresh_kvids = Vec::new();
+                        for _ in disjuncts.iter() {
+                            fresh_kvids.push(genv.get_next_kvid());
+                        }
+
+                        for (disjunct, fresh_kvid) in disjuncts.iter().zip(fresh_kvids.iter()) {
+                            base_fcx.ecx.local_var_env.push_layer_with_fresh_names(1);
+
+                            let guard = base_fcx
+                                .ecx
+                                .expr_to_fixpoint(&disjunct, &mut base_fcx.scx)
+                                .expect("Could not encode disjunct");
+
+                            let vars = base_fcx.ecx.local_var_env.pop_layer();
+
+                            let sort = base_fcx.scx.sort_to_fixpoint(&kvar_sort);
+
+                            let bind = fixpoint::Bind {
+                                name: fixpoint::Var::Local(vars[0]),
+                                sort,
+                                pred: fixpoint::Pred::Expr(guard),
+                            };
+                            let head = fixpoint::Constraint::Pred(
+                                fixpoint::Pred::KVar(
+                                    flux_infer::fixpoint_encoding::fixpoint::KVid::from_u32(
+                                        fresh_kvid.as_u32(),
+                                    ),
+                                    vec![fixpoint::Expr::Var(fixpoint::Var::Local(vars[0]))],
+                                ),
+                                None,
+                            );
+                            constraints.push(fixpoint::Constraint::ForAll(bind, Box::new(head)));
+                        }
+
+                        for fresh_kvid in &fresh_kvids {
+                            base_fcx.kvars.add(
+                                *fresh_kvid,
+                                KVarDecl {
+                                    self_args: 1,
+                                    sorts: vec![kvar_sort.clone()],
+                                    encoding: KVarEncoding::Single,
+                                },
+                            );
+
+                            let fixpoint_kvid = fixpoint::KVid::from_u32(fresh_kvid.as_u32());
+                            base_fcx
+                                .kcx
+                                .ranges
+                                .insert(*fresh_kvid, fixpoint_kvid..fixpoint_kvid + 1);
+                        }
+
+                        for (_, fresh_kvid) in fresh_kvids.iter().enumerate() {
+                            let local = base_fcx.ecx.local_var_env.fresh_name();
+                            let sort = base_fcx.scx.sort_to_fixpoint(&kvar_sort);
+                            let fixpoint_kvid = fixpoint::KVid::from_u32(fresh_kvid.as_u32());
+
+                            let trivial_check = fixpoint::Constraint::Pred(
+                                fixpoint::Pred::Expr(fixpoint::Expr::Atom(
+                                    fixpoint::BinRel::Lt,
+                                    Box::new([fixpoint::Expr::int(10), fixpoint::Expr::int(11)]),
+                                )),
+                                None,
+                            );
+
+                            let kvar_bind = fixpoint::Bind {
+                                name: fixpoint::Var::Underscore,
+                                sort: sort.clone(),
+                                pred: fixpoint::Pred::KVar(
+                                    fixpoint_kvid,
+                                    vec![fixpoint::Expr::Var(fixpoint::Var::Local(local))],
+                                ),
+                            };
+
+                            let outer_bind = fixpoint::Bind {
+                                name: fixpoint::Var::Local(local),
+                                sort,
+                                pred: fixpoint::Pred::TRUE,
+                            };
+
+                            let consumer = fixpoint::Constraint::ForAll(
+                                outer_bind,
+                                Box::new(fixpoint::Constraint::ForAll(
+                                    kvar_bind,
+                                    Box::new(trivial_check),
+                                )),
+                            );
+
+                            constraints.push(consumer);
+                        }
+
+                        let combined = fixpoint::Constraint::Conj(constraints);
+
+                        use rustc_hir::def_id::CRATE_DEF_ID;
+
+                        let dummy_def_id = MaybeExternId::Local(CRATE_DEF_ID);
+                        let solver = match genv.infer_opts(source.as_local().unwrap()).solver {
+                            flux_config::SmtSolver::Z3 => liquid_fixpoint::SmtSolver::Z3,
+                            flux_config::SmtSolver::CVC5 => liquid_fixpoint::SmtSolver::CVC5,
+                        };
+                        let mut task = base_fcx
+                            .create_task(
+                                dummy_def_id,
+                                combined,
+                                false,
+                                solver
+                            )
+                            .expect("Failed to create task");
+
+                        for fresh_kvid in &fresh_kvids {
+                            let fixpoint_kvid = fixpoint::KVid::from_u32(fresh_kvid.as_u32());
+                            task.add_cut_kvar(fixpoint_kvid);
+                        }
+
+                        // add qualifiers to the task
+                        let mut seen = FxIndexSet::default();
+                        for sink in sinks_to_check.iter() {
+                            let sink_for = genv.sink_for(*sink) ;
+                            if !seen.contains(&sink_for) {
+                                match sink_for {
+                                    fhir::SinkType::DynamoPut => {
+                                        task.string_qualifiers.push(
+                                            "
+;; qualifiers for DynamoPut - we want to be able to infer table name and items being set
+
+;; qualifiers to determine the variant of
+
+(qualif DynPutIsBool ((a0 Adt2831635821) (a1# Str))
+    (= mkadt1194516581$2 (fld1924543948$0 (Map_select (fld2831635821$1 a0) a1))))
+
+(qualif DynPutIsStr ((a0 Adt2831635821) (a1# Str))
+    (= mkadt1194516581$0  (fld1924543948$0 (Map_select (fld2831635821$1 a0) a1))))
+
+(qualif DynPutIsNum ((a0 Adt2831635821) (a1# Str))
+    (= mkadt1194516581$1 (fld1924543948$0 (Map_select (fld2831635821$1 a0) a1))))
+
+(qualif DynPutStrVal ((a0 Adt2831635821) (a1# Str) (a2# Str))
+    (= (fld1924543948$1 (Map_select (fld2831635821$1 a0) a1)) a2))
+
+(qualif DynPutBoolValT ((a0 Adt2831635821) (a1# Str))
+    (= true (fld1924543948$2 (Map_select (fld2831635821$1 a0) a1))))
+
+(qualif DynPutBoolValF ((a0 Adt2831635821) (a1# Str))
+    (= false (fld1924543948$2 (Map_select (fld2831635821$1 a0) a1))))
+
+;; Table name
+(qualif DynPutTableName ((a0 Adt2831635821) (a1# Str))
+    (= (fld2831635821$0 a0) a1))
+                                            "
+                                        )
+                                    }
+                                    fhir::SinkType::DynamoGet => {
+                                        task.string_qualifiers.push(
+                                            "
+;; qualifiers for DynamoGet - we want to be able to infer table name and key
+
+;; qualifiers to determine the variant of
+
+(qualif DynGetIsBool ((a0 Adt309293745) (a1# Str))
+    (= mkadt1194516581$2 (fld1924543948$0 (Map_select (fld309293745$1 a0) a1))))
+
+(qualif DynGetIsStr ((a0 Adt309293745) (a1# Str))
+    (= mkadt1194516581$0  (fld1924543948$0 (Map_select (fld309293745$1 a0) a1))))
+
+(qualif DynGetIsNum ((a0 Adt309293745) (a1# Str))
+    (= mkadt1194516581$1 (fld1924543948$0 (Map_select (fld309293745$1 a0) a1))))
+
+(qualif DynGetStrVal ((a0 Adt309293745) (a1# Str) (a2# Str))
+    (= (fld1924543948$1 (Map_select (fld309293745$1 a0) a1)) a2))
+
+(qualif DynGetBoolValT ((a0 Adt309293745) (a1# Str))
+    (= true (fld1924543948$2 (Map_select (fld309293745$1 a0) a1))))
+
+(qualif DynGetBoolValF ((a0 Adt309293745) (a1# Str))
+    (= false (fld1924543948$2 (Map_select (fld309293745$1 a0) a1))))
+
+;; Table name
+(qualif DynGetTableName ((a0 Adt309293745) (a1# Str))
+    (= (fld309293745$0 a0) a1))
+                                            "
+                                        )
+                                    }
+                                    // TODO ADD QUALIFS FOR THESE
+                                    fhir::SinkType::DynamoDelete => {}
+                                    fhir::SinkType::DynamoUpdate => {}
+                                    fhir::SinkType::S3PutObject => {}
+                                    fhir::SinkType::S3GetObject => {}
+                                    fhir::SinkType::S3DeleteObject => {}
+                                    fhir::SinkType::Unknown => {}
+                                    fhir::SinkType::DynamoQuery => {}
+                                }
+                            } else {
+                                seen.insert(sink_for);
+                            }
+                        }
+
+                        let verification_result = match task.run() {
+                            Ok(r) => r,
+                            Err(err) => {
+                        // println!("{mega_task}");
+                        // bug!();
+                                crash_log.push((*source, format!("per-sink task run failed in cut phase: {err}")));
+                                continue;
+                            }
+                        };
+
+                        if let FixpointStatus::Crash(ref crash_reason) = verification_result.status {
+                        // println!("{mega_task}");
+                        // bug!();
+                            crash_log.push((*source, format!("FixpointStatus::Crash in cut phase: {crash_reason:?}")));
+                            continue;
+                        }
+
+                        let cut_kvar_solutions =
+                            base_fcx.parse_kvar_solutions(&verification_result.solution);
+
+                        let mut solutions = Vec::new();
+                        for (kvar_id, sol) in cut_kvar_solutions.iter() {
+                            let res = base_fcx.fixpoint_to_solution(sol);
+                            solutions.push((*kvar_id, res));
+                        }
+
+                        if !solutions.is_empty() {
+                            let sink_for = genv.sink_for(*sink_def_id);
+                            solution_log.push((*source, sink_for, solutions));
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Print solutions (same format as before) ───────────────────────────────────
+        for (source, sink_for, solutions) in &solution_log {
+            println!("SOLUTION FOR {:?}", source);
+            println!("{sink_for:?}");
+            for (kvar_id, res) in solutions {
+                println!("{kvar_id:?}: {:#?}", res);
+            }
+            println!();
+        }
+
+        // ── Print crash summary ───────────────────────────────────────────────────────
+        println!("=== CRASH SUMMARY ({} crashed) ===", crash_log.len());
+        for (source, reason) in &crash_log {
+            println!("  source={:?}  reason={}", source, reason);
+            println!();
+        }
+        println!("=== END CRASH SUMMARY ===");
+
+        // if config::lean().is_check() || config::lean().is_emit() {
+        //     lean_encoding::finalize(genv)
+        //         .unwrap_or_else(|err| bug!("error running lean-check {err:?}"));
+        // }
+
+        // let lean_result = if config::lean().is_check() {
+        //     genv.iter_local_def_id().try_for_each_exhaust(|def_id| {
+        //         if genv.proven_externally(def_id).is_some() {
+        //             let key = lean_task_key(genv.tcx(), def_id.to_def_id());
+        //             // Skip proof check if previously verified successfully.
+        //             if config::is_cache_enabled()
+        //                 && ck
+        //                     .cache
+        //                     .lookup_by_key(&key)
+        //                     .map(|r| matches!(r.lean_status, LeanStatus::Valid))
+        //                     .unwrap_or(false)
+        //             {
+        //                 return Ok(());
+        //             }
+        //             lean_encoding::check_proof(genv, def_id.to_def_id())?;
+        //             // Mark as valid in cache so future runs skip re-verification.
+        //             ck.cache
+        //                 .update_result_by_key(&key, |r| r.lean_status = LeanStatus::Valid);
+        //             Ok(())
+        //         } else {
+        //             Ok(())
+        //         }
+        //     })
+        // } else {
+        //     Ok(())
+        // };
+
+        // ck.cache.save().unwrap_or(());
 
         tracing::info!("Callbacks::check_crate");
 
-        result.and(lean_result)
+        Ok(())
     })
 }
 
@@ -167,11 +623,18 @@ fn encode_and_save_metadata(genv: GlobalEnv) {
 struct CrateChecker<'genv, 'tcx> {
     genv: GlobalEnv<'genv, 'tcx>,
     cache: FixQueryCache,
+    def_id_to_cstr_map: FxIndexMap<DefId, Task>,
+    def_id_to_fixpoint_ctx: FxIndexMap<DefId, FixpointCtxt<'genv, 'tcx, Tag>>,
 }
 
 impl<'genv, 'tcx> CrateChecker<'genv, 'tcx> {
     fn new(genv: GlobalEnv<'genv, 'tcx>) -> Self {
-        Self { genv, cache: QueryCache::load() }
+        Self {
+            genv,
+            cache: QueryCache::load(),
+            def_id_to_cstr_map: FxIndexMap::default(),
+            def_id_to_fixpoint_ctx: FxIndexMap::default(),
+        }
     }
 
     fn matches_def(&self, def_id: MaybeExternId, def: &str) -> bool {
@@ -256,6 +719,7 @@ impl<'genv, 'tcx> CrateChecker<'genv, 'tcx> {
 
         // Dummy items generated for extern specs are excluded from metrics
         if genv.is_dummy(def_id.local_id()) {
+            println!("EXIT IS DUMMY");
             return Ok(());
         }
 
@@ -292,7 +756,13 @@ impl<'genv, 'tcx> CrateChecker<'genv, 'tcx> {
             DefKind::Fn | DefKind::AssocFn => {
                 let Some(local_id) = def_id.as_local() else { return Ok(()) };
                 if is_fn_with_body {
-                    refineck::check_fn(genv, &mut self.cache, local_id)?;
+                    refineck::check_fn(
+                        genv,
+                        &mut self.cache,
+                        local_id,
+                        &mut self.def_id_to_cstr_map,
+                        &mut self.def_id_to_fixpoint_ctx,
+                    )?;
                 }
             }
             DefKind::Enum => {
@@ -307,6 +777,8 @@ impl<'genv, 'tcx> CrateChecker<'genv, 'tcx> {
                     def_id,
                     enum_def.invariants,
                     &adt_def,
+                    &mut self.def_id_to_cstr_map,
+                    &mut self.def_id_to_fixpoint_ctx,
                 )?;
             }
             DefKind::Struct => {
@@ -325,7 +797,14 @@ impl<'genv, 'tcx> CrateChecker<'genv, 'tcx> {
                 if let StaticInfo::Known(ty) = genv.static_info(def_id).emit(&genv)?
                     && let Some(local_id) = def_id.as_local()
                 {
-                    refineck::check_static(genv, &mut self.cache, local_id, ty)?;
+                    refineck::check_static(
+                        genv,
+                        &mut self.cache,
+                        local_id,
+                        ty,
+                        &mut self.def_id_to_cstr_map,
+                        &mut self.def_id_to_fixpoint_ctx,
+                    )?;
                 }
             }
             _ => (),

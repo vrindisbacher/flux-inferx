@@ -8,10 +8,14 @@ use flux_rustc_bridge::{
     const_eval::{scalar_to_bits, scalar_to_int, scalar_to_uint},
     ty::{Const, ConstKind, ValTree, VariantIdx},
 };
+use hashbrown::HashSet;
 use itertools::Itertools;
 use liquid_fixpoint::ThyFunc;
 use rustc_abi::{FIRST_VARIANT, FieldIdx};
-use rustc_data_structures::{fx::FxHashMap, snapshot_map::SnapshotMap};
+use rustc_data_structures::{
+    fx::{FxHashMap, FxIndexMap},
+    snapshot_map::SnapshotMap,
+};
 use rustc_hir::def_id::DefId;
 use rustc_index::newtype_index;
 use rustc_macros::{Decodable, Encodable, TyDecodable, TyEncodable};
@@ -1031,6 +1035,20 @@ impl Var {
     pub fn to_expr(&self) -> Expr {
         Expr::var(*self)
     }
+
+    pub fn shift_in(&self, amount: u32) -> Self {
+        match self {
+            Var::Bound(idx, breft) => Var::Bound(idx.shifted_in(amount), *breft),
+            _ => *self,
+        }
+    }
+
+    pub fn shift_out(&self, amount: u32) -> Self {
+        match self {
+            Var::Bound(idx, breft) => Var::Bound(idx.shifted_out(amount), *breft),
+            _ => *self,
+        }
+    }
 }
 
 impl Path {
@@ -1968,5 +1986,80 @@ pub(crate) mod pretty {
                 }
             }
         }
+    }
+}
+
+// TO DNF
+impl Expr {
+    fn filter_vec_expr(exprs: Vec<Expr>) -> Vec<Expr> {
+        let mut seen = HashSet::new();
+        for expr in exprs {
+            if !seen.contains(&expr) {
+                seen.insert(expr);
+            }
+        }
+        seen.into_iter().collect()
+    }
+
+    /// Convert an expression to Disjunctive Normal Form (DNF).
+    /// Returns a Vec of conjuncts — each element is one disjunct,
+    /// represented as a conjunction (And) of literals.
+    pub fn to_dnf(&self) -> Vec<Expr> {
+        let mut memo: FxIndexMap<Expr, Vec<Expr>> = FxIndexMap::default();
+        self.to_dnf_memo(&mut memo)
+    }
+
+    fn to_dnf_memo(&self, memo: &mut FxIndexMap<Expr, Vec<Expr>>) -> Vec<Expr> {
+        if let Some(cached) = memo.get(self) {
+            return cached.clone();
+        }
+        let res = match self.kind() {
+            ExprKind::ForAll(..) => {
+                bug!("Did not expect forall in dnf")
+            }
+            ExprKind::Exists(binder) => {
+                let body_dnf = binder.skip_binder_ref().to_dnf_memo(memo);
+                body_dnf
+                    .into_iter()
+                    .map(move |disjunct| {
+                        Expr::exists(Binder::bind_with_vars(disjunct, binder.vars().clone()))
+                    })
+                    .collect()
+            }
+            ExprKind::BinaryOp(BinOp::Or, expr1, expr2) => {
+                let mut e1_dnf = expr1.to_dnf_memo(memo);
+                let mut e2_dnf = expr2.to_dnf_memo(memo);
+                e1_dnf.append(&mut e2_dnf);
+                e1_dnf
+            }
+            ExprKind::BinaryOp(BinOp::And, expr1, expr2) => {
+                let dnf1 = expr1.to_dnf_memo(memo);
+                let dnf2 = expr2.to_dnf_memo(memo);
+                let mut result = Vec::new();
+                for c1 in dnf1.iter() {
+                    for c2 in dnf2.iter() {
+                        result.push(Expr::and(c1.clone(), c2.clone()));
+                    }
+                }
+                result
+            }
+            ExprKind::UnaryOp(UnOp::Not, e) => {
+                match e.kind() {
+                    ExprKind::Exists(..) => bug!("Cannot distribute not over exists in DNF"),
+                    ExprKind::BinaryOp(BinOp::And, e1, e2) => {
+                        Expr::or(e1.not(), e2.not()).to_dnf_memo(memo)
+                    }
+                    ExprKind::BinaryOp(BinOp::Or, e1, e2) => {
+                        Expr::and(e1.not(), e2.not()).to_dnf_memo(memo)
+                    }
+                    ExprKind::UnaryOp(UnOp::Not, e) => e.to_dnf_memo(memo),
+                    _ => vec![self.clone()],
+                }
+            }
+            _ => vec![self.clone()],
+        };
+        let res = Expr::filter_vec_expr(res);
+        memo.insert(self.clone(), res.clone());
+        res
     }
 }

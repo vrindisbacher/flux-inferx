@@ -8,7 +8,7 @@ use flux_attrs::*;
 
 //---------------------------------------------------------------------------------------
 #[extern_spec]
-#[refined_by(len: int)]
+#[refined_by(len: int, items: Map<int, T>)]
 #[invariant(0 <= len)]
 struct Vec<T, A: Allocator = Global>;
 
@@ -16,22 +16,22 @@ struct Vec<T, A: Allocator = Global>;
 
 #[extern_spec]
 impl<T> Vec<T> {
-    #[flux::sig(fn() -> Vec<T>[0])]
+    #[flux::sig(fn() -> Vec<T>{ v: v.len == 0 })]
     fn new() -> Vec<T>;
 }
 
 #[extern_spec]
 impl<T, A: Allocator> Vec<T, A> {
-    #[spec(fn(self: &mut Vec<T, A>[@n], T) ensures self: Vec<T, A>[n+1])]
+    #[spec(fn(self: &mut Vec<T, A>[@n, @i], T[@v]) ensures self: Vec<T, A>[n+1, map_store(i, n, v)])]
     fn push(v: &mut Vec<T, A>, value: T);
 
-    #[spec(fn(&Vec<T, A>[@n]) -> usize[n])]
+    #[spec(fn(&Vec<T, A>[@n, @i]) -> usize[n])]
     fn len(v: &Vec<T, A>) -> usize;
 
-    #[spec(fn(self: &mut Vec<T, A>[@n]) -> Option<T>[n > 0] ensures self: Vec<T, A>[if n > 0 { n-1 } else { 0 }])]
+    #[spec(fn(self: &mut Vec<T, A>[@n, @i]) -> Option<T>[n > 0] ensures self: Vec<T, A>{v: v.len == if n > 0 { n-1 } else { 0 } })]
     fn pop(&mut self) -> Option<T>;
 
-    #[spec(fn(self: &Vec<T, A>[@n]) -> bool[n == 0])]
+    #[spec(fn(self: &Vec<T, A>[@n, @i]) -> bool[n == 0])]
     fn is_empty(&self) -> bool;
 }
 
@@ -39,20 +39,20 @@ impl<T, A: Allocator> Vec<T, A> {
 
 #[extern_spec]
 impl<T, I: SliceIndex<[T]>, A: Allocator> Index<I> for Vec<T, A> {
-    #[spec(fn(&Vec<T, A>[@len], {I[@idx] | <I as SliceIndex<[T]>>::in_bounds(idx, len)}) -> _)]
+    #[spec(fn(&Vec<T, A>[@len, @i], {I[@idx] | <I as SliceIndex<[T]>>::in_bounds(idx, len)}) -> _)]
     fn index(z: &Vec<T, A>, index: I) -> &<I as SliceIndex<[T]>>::Output;
 }
 
 #[extern_spec]
 impl<T, I: SliceIndex<[T]>, A: Allocator> IndexMut<I> for Vec<T, A> {
-    #[spec(fn(&mut Vec<T,A>[@len], {I[@idx] | <I as SliceIndex<[T]>>::in_bounds(idx, len)}) -> _)]
+    #[spec(fn(&mut Vec<T,A>[@len, @i], {I[@idx] | <I as SliceIndex<[T]>>::in_bounds(idx, len)}) -> _)]
     fn index_mut(z: &mut Vec<T, A>, index: I) -> &mut <I as SliceIndex<[T]>>::Output;
 }
 
 //---------------------------------------------------------------------------------------
 #[extern_spec]
 impl<'a, T, A: Allocator> IntoIterator for &'a Vec<T, A> {
-    #[spec(fn (&Vec<T, A>[@n]) -> <&Vec<T, A> as IntoIterator>::IntoIter[0,n])]
+    #[spec(fn (&Vec<T, A>[@n, @i]) -> <&Vec<T, A> as IntoIterator>::IntoIter[0,n])]
     fn into_iter(v: &'a Vec<T, A>) -> <&'a Vec<T, A> as IntoIterator>::IntoIter;
 }
 

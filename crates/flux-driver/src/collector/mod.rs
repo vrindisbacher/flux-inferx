@@ -584,6 +584,24 @@ impl<'a, 'tcx> SpecCollector<'a, 'tcx> {
                 })?
             }
             ("ignore", hir::AttrArgs::Empty) => FluxAttrKind::Ignore(surface::Ignored::Yes),
+            ("source", hir::AttrArgs::Empty) => FluxAttrKind::Source,
+            ("sink", hir::AttrArgs::Delimited(dargs)) => {
+                self.parse(dargs, ParseSess::parse_ident, |ident| {
+                    match ident.as_str() {
+                        // Dynamo
+                        "DynamoPut" => FluxAttrKind::Sink(SinkType::DynamoPut),
+                        "DynamoGet" => FluxAttrKind::Sink(SinkType::DynamoGet),
+                        "DynamoDelete" => FluxAttrKind::Sink(SinkType::DynamoDelete),
+                        "DynamoUpdate" => FluxAttrKind::Sink(SinkType::DynamoUpdate),
+                        "DynamoQuery" => FluxAttrKind::Sink(SinkType::DynamoQuery),
+                        // S3
+                        "S3GetObject" => FluxAttrKind::Sink(SinkType::S3GetObject),
+                        "S3PutObject" => FluxAttrKind::Sink(SinkType::S3PutObject),
+                        "S3DeleteObject" => FluxAttrKind::Sink(SinkType::S3DeleteObject),
+                        _ => FluxAttrKind::Sink(SinkType::Unknown),
+                    }
+                })?
+            }
             ("trusted", hir::AttrArgs::Delimited(dargs)) => {
                 self.parse(dargs, ParseSess::parse_yes_or_no_with_reason, |b| {
                     FluxAttrKind::Trusted(b.into())
@@ -702,6 +720,37 @@ struct FluxAttr {
 }
 
 #[derive(Debug)]
+enum SinkType {
+    // Dynamo Operations
+    DynamoPut,
+    DynamoGet,
+    DynamoDelete,
+    DynamoUpdate,
+    DynamoQuery,
+    // S3 Operations
+    S3PutObject,
+    S3GetObject,
+    S3DeleteObject,
+    Unknown,
+}
+
+impl Into<flux_syntax::surface::SinkType> for SinkType {
+    fn into(self) -> flux_syntax::surface::SinkType {
+        match self {
+            SinkType::DynamoPut => surface::SinkType::DynamoPut,
+            SinkType::DynamoGet => surface::SinkType::DynamoGet,
+            SinkType::DynamoDelete => surface::SinkType::DynamoDelete,
+            SinkType::DynamoUpdate => surface::SinkType::DynamoUpdate,
+            SinkType::DynamoQuery => surface::SinkType::DynamoQuery,
+            SinkType::Unknown => surface::SinkType::Unknown,
+            SinkType::S3PutObject => surface::SinkType::S3PutObject,
+            SinkType::S3GetObject => surface::SinkType::S3GetObject,
+            SinkType::S3DeleteObject => surface::SinkType::S3DeleteObject,
+        }
+    }
+}
+
+#[derive(Debug)]
 enum FluxAttrKind {
     Trusted(Trusted),
     TrustedImpl(Trusted),
@@ -728,6 +777,8 @@ enum FluxAttrKind {
     ExternSpec,
     NoPanic,
     NoPanicIf(surface::Expr),
+    Source,
+    Sink(SinkType),
     /// See `detachXX.rs`
     DetachedSpecs(surface::DetachedSpecs),
 }
@@ -885,6 +936,8 @@ impl FluxAttrs {
                 FluxAttrKind::Ignore(ignored) => surface::Attr::Ignore(ignored),
                 FluxAttrKind::ShouldFail => surface::Attr::ShouldFail,
                 FluxAttrKind::NoPanic => surface::Attr::NoPanic,
+                FluxAttrKind::Source => surface::Attr::Source,
+                FluxAttrKind::Sink(sink_type) => surface::Attr::Sink(sink_type.into()),
                 FluxAttrKind::Opaque
                 | FluxAttrKind::Reflect
                 | FluxAttrKind::FnSig(_)
@@ -938,6 +991,8 @@ impl FluxAttrKind {
             FluxAttrKind::DetachedSpecs(_) => attr_name!(DetachedSpecs),
             FluxAttrKind::NoPanic => attr_name!(NoPanic),
             FluxAttrKind::NoPanicIf(_) => attr_name!(NoPanicIf),
+            FluxAttrKind::Source => attr_name!(Source),
+            FluxAttrKind::Sink(_) => attr_name!(Sink),
         }
     }
 }

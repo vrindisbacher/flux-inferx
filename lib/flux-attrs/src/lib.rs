@@ -120,6 +120,16 @@ pub fn no_panic(attrs: TokenStream, tokens: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
+pub fn source(attrs: TokenStream, tokens: TokenStream) -> TokenStream {
+    attr_impl::source(attrs, tokens)
+}
+
+#[proc_macro_attribute]
+pub fn sink(attrs: TokenStream, tokens: TokenStream) -> TokenStream {
+    attr_impl::sink(attrs, tokens)
+}
+
+#[proc_macro_attribute]
 pub fn no_panic_if(attrs: TokenStream, tokens: TokenStream) -> TokenStream {
     attr_impl::no_panic_if(attrs, tokens)
 }
@@ -177,6 +187,8 @@ mod attr_sysroot {
         reft,
         no_panic,
         no_panic_if,
+        source,
+        sink
     );
 }
 
@@ -228,5 +240,7 @@ mod attr_dummy {
         no_panic,
         no_panic_if,
         reft,
+        source,
+        sink
     );
 }

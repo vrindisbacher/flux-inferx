@@ -48,6 +48,14 @@ impl<T: Types> fmt::Display for Task<T> {
             writeln!(f, "{qualif}")?;
         }
 
+        for qualif in &self.string_qualifiers {
+            writeln!(f, "{qualif}")?;
+        }
+
+        for kvar in &self.cut_kvars {
+            writeln!(f, "(cut ${})", kvar.display())?;
+        }
+
         for cinfo in &self.constants {
             writeln!(f, "{cinfo}")?;
         }
@@ -217,7 +225,7 @@ impl<T: Types> fmt::Display for SortCtor<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SortCtor::Set => write!(f, "Set_Set"),
-            SortCtor::Map => write!(f, "Map_t"),
+            SortCtor::Map => write!(f, "Array_t"),
             SortCtor::Data(name) => write!(f, "{}", name.display()),
         }
     }
@@ -328,11 +336,26 @@ impl<T: Types> fmt::Display for Expr<T> {
             Expr::IsCtor(ctor, e) => {
                 write!(f, "(is${} {})", ctor.display(), e)
             }
+            // Expr::Exists(sorts, body) => {
+            //     write!(
+            //         f,
+            //         "(exists ({}) {})",
+            //         sorts.iter().map(|binder| &binder.1).format(" "),
+            //         body
+            //     )
+            // }
             Expr::Exists(sorts, body) => {
                 write!(
                     f,
                     "(exists ({}) {})",
-                    sorts.iter().map(|binder| &binder.1).format(" "),
+                    sorts
+                        .iter()
+                        .map(|(var, sort)| {
+                            let mut s = String::new();
+                            write!(s, "({} {})", var.display(), sort).unwrap();
+                            s
+                        })
+                        .format(" "),
                     body
                 )
             }

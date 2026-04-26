@@ -1,17 +1,17 @@
 [package]
-name = "flux-bin"
+name = "flux-inferx-bin"
 version = "0.1.0"
 
 edition.workspace = true
 
 [[bin]]
+name = "cargo-flux-inferx"
 doctest = false
-name = "cargo-flux"
 test = false
 
 [[bin]]
 doctest = false
-name = "flux"
+name = "flux-inferx"
 test = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
