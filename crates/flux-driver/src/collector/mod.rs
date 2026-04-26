@@ -584,7 +584,21 @@ impl<'a, 'tcx> SpecCollector<'a, 'tcx> {
                 })?
             }
             ("ignore", hir::AttrArgs::Empty) => FluxAttrKind::Ignore(surface::Ignored::Yes),
-            ("source", hir::AttrArgs::Empty) => FluxAttrKind::Source,
+            ("source", hir::AttrArgs::Delimited(dargs)) => {
+                self.parse(dargs, ParseSess::parse_source_names, |exprs| {
+                    let names = exprs
+                        .into_iter()
+                        .flat_map(|expr| {
+                            if let surface::ExprKind::Literal(name) = expr.kind {
+                                Some(name.to_string())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    FluxAttrKind::Source(names)
+                })?
+            }
             ("sink", hir::AttrArgs::Delimited(dargs)) => {
                 self.parse(dargs, ParseSess::parse_ident, |ident| {
                     match ident.as_str() {
@@ -777,7 +791,7 @@ enum FluxAttrKind {
     ExternSpec,
     NoPanic,
     NoPanicIf(surface::Expr),
-    Source,
+    Source(Vec<String>),
     Sink(SinkType),
     /// See `detachXX.rs`
     DetachedSpecs(surface::DetachedSpecs),
@@ -936,7 +950,7 @@ impl FluxAttrs {
                 FluxAttrKind::Ignore(ignored) => surface::Attr::Ignore(ignored),
                 FluxAttrKind::ShouldFail => surface::Attr::ShouldFail,
                 FluxAttrKind::NoPanic => surface::Attr::NoPanic,
-                FluxAttrKind::Source => surface::Attr::Source,
+                FluxAttrKind::Source(names) => surface::Attr::Source(names),
                 FluxAttrKind::Sink(sink_type) => surface::Attr::Sink(sink_type.into()),
                 FluxAttrKind::Opaque
                 | FluxAttrKind::Reflect
@@ -991,7 +1005,7 @@ impl FluxAttrKind {
             FluxAttrKind::DetachedSpecs(_) => attr_name!(DetachedSpecs),
             FluxAttrKind::NoPanic => attr_name!(NoPanic),
             FluxAttrKind::NoPanicIf(_) => attr_name!(NoPanicIf),
-            FluxAttrKind::Source => attr_name!(Source),
+            FluxAttrKind::Source(..) => attr_name!(Source),
             FluxAttrKind::Sink(_) => attr_name!(Sink),
         }
     }

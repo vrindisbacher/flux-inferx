@@ -656,7 +656,7 @@ pub enum Attr {
     /// A `#[no_panic]` attribute
     NoPanic,
     /// A `#[source]` attribute
-    Source,
+    Source(Vec<String>),
     /// A `#[sink]` attribute
     Sink(SinkType),
 }

@@ -289,6 +289,7 @@ pub struct Queries<'genv, 'tcx> {
     no_panic: Cache<DefId, bool>,
     is_sink: Cache<DefId, bool>,
     sink_for: Cache<DefId, SinkType>,
+    source_for: Cache<DefId, Vec<String>>,
 }
 
 impl<'genv, 'tcx> Queries<'genv, 'tcx> {
@@ -332,6 +333,7 @@ impl<'genv, 'tcx> Queries<'genv, 'tcx> {
             no_panic: Default::default(),
             is_sink: Default::default(),
             sink_for: Default::default(),
+            source_for: Default::default(),
         }
     }
 
@@ -983,6 +985,18 @@ impl<'genv, 'tcx> Queries<'genv, 'tcx> {
                 self,
                 |def_id| genv.fhir_attr_map(def_id.local_id()).sink_for(),
                 |def_id| genv.cstore().sink_for(def_id),
+                |_| bug!("sink should always have an associated type"),
+            )
+        })
+    }
+
+    pub(crate) fn source_for(&self, genv: GlobalEnv, def_id: DefId) -> Vec<String> {
+        run_with_cache(&self.source_for, def_id, || {
+            def_id.dispatch_query(
+                genv,
+                self,
+                |def_id| genv.fhir_attr_map(def_id.local_id()).source_for(),
+                |_def_id| bug!("non local sinks are not supported"),
                 |_| bug!("sink should always have an associated type"),
             )
         })

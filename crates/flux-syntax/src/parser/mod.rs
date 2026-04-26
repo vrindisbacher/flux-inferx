@@ -139,6 +139,15 @@ pub(crate) fn parse_yes_or_no_with_reason(cx: &mut ParseCtxt) -> ParseResult<boo
         Err(lookahead.into_error())
     }
 }
+/// ```text
+/// (source_names) := source([⟨literal⟩,*])
+/// ```
+pub(crate) fn parse_source_names(cx: &mut ParseCtxt) -> ParseResult<Vec<Expr>> {
+    cx.expect(token::OpenBracket)?;
+    let (names, _) = punctuated_with_trailing(cx, Comma, token::CloseBracket, parse_lit)?;
+    cx.expect(token::CloseBracket)?;
+    Ok(names)
+}
 
 /// ```text
 /// ⟨reason⟩ := reason = ⟨literal⟩
