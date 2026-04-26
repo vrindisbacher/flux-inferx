@@ -114,24 +114,24 @@ fn opt_span_bug_fmt<S: Into<MultiSpan>>(
 }
 
 pub fn catch_bugs<R>(msg: &str, f: impl FnOnce() -> R + UnwindSafe) -> Result<R, ErrorGuaranteed> {
-    if config::catch_bugs() {
-        match std::panic::catch_unwind(f) {
-            Ok(v) => Ok(v),
-            Err(payload) => {
-                tls::with_opt(move |tcx| {
-                    let Some(tcx) = tcx else { std::panic::resume_unwind(payload) };
+    // if config::catch_bugs() {
+    match std::panic::catch_unwind(f) {
+        Ok(v) => Ok(v),
+        Err(payload) => {
+            tls::with_opt(move |tcx| {
+                let Some(tcx) = tcx else { std::panic::resume_unwind(payload) };
 
-                    if payload.is::<ExplicitBug>() {
-                        eprintln!("note: bug caught [{msg}]\n");
-                        Err(tcx.dcx().delayed_bug("bug wasn't reported"))
-                    } else {
-                        eprintln!("note: uncaught panic [{msg}]\n");
-                        std::panic::resume_unwind(payload)
-                    }
-                })
-            }
+                if payload.is::<ExplicitBug>() {
+                    eprintln!("note: bug caught [{msg}]\n");
+                    Err(tcx.dcx().delayed_bug("bug wasn't reported"))
+                } else {
+                    eprintln!("note: uncaught panic [{msg}]\n");
+                    std::panic::resume_unwind(payload)
+                }
+            })
         }
-    } else {
-        Ok(f())
     }
+    // } else {
+    // Ok(f())
+    // }
 }

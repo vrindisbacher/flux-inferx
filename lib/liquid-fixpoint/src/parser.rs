@@ -170,6 +170,12 @@ where
                                 Err(_) => parse_lit_str(sexp, &self.parser),
                             }
                         }
+                        "if" => {
+                            let cond = self.parse_expr_possibly_nested(&items[1])?;
+                            let then_ = self.parse_expr_possibly_nested(&items[2])?;
+                            let else_ = self.parse_expr_possibly_nested(&items[3])?;
+                            Ok(Expr::IfThenElse(Box::new([cond, then_, else_])))
+                        }
                         "-" if items.len() == 2 => self.parse_neg(sexp),
                         "+" | "-" | "*" | "/" | "mod" => self.parse_binary_op(sexp),
                         "=" | "!=" | "<" | "<=" | ">" | ">=" => self.parse_atom(sexp),
@@ -313,6 +319,8 @@ where
         match sexp {
             Sexp::List(items) => {
                 let Sexp::List(inner) = &items[0] else {
+                    println!("{:?}", items[0]);
+                    panic!();
                     Err(ParseError::err("Expected list for inner func"))?
                 };
                 match &inner[1] {

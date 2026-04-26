@@ -102,7 +102,7 @@ impl CallGraph {
                 if path.contains(&callee) {
                     let callee_str = format!("{:?}", callee);
                     // HACK: this kept popping up and I think we can just skip this stuff and pretend it doesn't recurse
-                    // We will pick that up anyways in the constraint and it shouldn't effect any of the things we really 
+                    // We will pick that up anyways in the constraint and it shouldn't effect any of the things we really
                     // want to do
                     if callee_str.contains("slice::sort") {
                         continue;

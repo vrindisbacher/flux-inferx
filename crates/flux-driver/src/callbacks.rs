@@ -143,7 +143,6 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
         let mut solution_log = Vec::new();
 
         for source in sources.iter() {
-            println!("CHECKING {source:?}");
             // clear def ids and fixpoint context maps for each source
             ck.def_id_to_cstr_map.clear();
             ck.def_id_to_fixpoint_ctx.clear();
@@ -254,6 +253,8 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                     }
                 };
 
+                println!("CHECKING SOURCE: {source:?}");
+
                 if let FixpointStatus::Crash(ref crash_reason) = verification_result.status {
                         // println!("FAILED FOR {source:?}");
                         // println!("{mega_task}");
@@ -281,13 +282,23 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                             bug!("Sink KVar had no solution in mono constraint")
                         });
 
-                        let res = base_fcx.fixpoint_to_solution(sol);
+                        use std::panic::AssertUnwindSafe;
+                        let res = match flux_common::bug::catch_bugs("", AssertUnwindSafe(||
+                            base_fcx.fixpoint_to_solution(sol))) {
+                                Ok(r) => r,
+                                Err(e) => {
+                                    crash_log.push((*source, format!("Crashed turning kvar solution to rty expr for source: {source:?} -> {sink_def_id:?}. The error was: {e:?}")));
+                                    continue;
+                                }
+                            };
                         let kvar_sort = res.vars()[0].expect_sort().clone();
                         let simplified_sol = res
                             .skip_binder_ref()
                             .simplify(&SnapshotMap::default())
                             .normalize(genv);
+                        println!("CONVERTING TO DNF");
                         let disjuncts = simplified_sol.to_dnf();
+                        println!("DONE");
 
                         let mut constraints = Vec::new();
 
@@ -392,12 +403,16 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                         use rustc_hir::def_id::CRATE_DEF_ID;
 
                         let dummy_def_id = MaybeExternId::Local(CRATE_DEF_ID);
+                        let solver = match genv.infer_opts(source.as_local().unwrap()).solver {
+                            flux_config::SmtSolver::Z3 => liquid_fixpoint::SmtSolver::Z3,
+                            flux_config::SmtSolver::CVC5 => liquid_fixpoint::SmtSolver::CVC5,
+                        };
                         let mut task = base_fcx
                             .create_task(
                                 dummy_def_id,
                                 combined,
                                 false,
-                                liquid_fixpoint::SmtSolver::Z3,
+                                solver
                             )
                             .expect("Failed to create task");
 
@@ -474,12 +489,14 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                                             "
                                         )
                                     }
+                                    // TODO ADD QUALIFS FOR THESE
                                     fhir::SinkType::DynamoDelete => {}
                                     fhir::SinkType::DynamoUpdate => {}
                                     fhir::SinkType::S3PutObject => {}
                                     fhir::SinkType::S3GetObject => {}
                                     fhir::SinkType::S3DeleteObject => {}
                                     fhir::SinkType::Unknown => {}
+                                    fhir::SinkType::DynamoQuery => {}
                                 }
                             } else {
                                 seen.insert(sink_for);
@@ -697,7 +714,6 @@ impl<'genv, 'tcx> CrateChecker<'genv, 'tcx> {
     }
 
     fn check_def(&mut self, def_id: LocalDefId) -> Result<(), ErrorGuaranteed> {
-        println!("CHECKING {def_id:?}");
         let genv = self.genv;
         let def_id = genv.maybe_extern_id(def_id);
 

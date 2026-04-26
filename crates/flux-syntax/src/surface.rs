@@ -619,6 +619,7 @@ pub enum SinkType {
     DynamoGet,
     DynamoDelete,
     DynamoUpdate,
+    DynamoQuery,
     // S3 Operations
     S3PutObject,
     S3GetObject,

@@ -183,7 +183,7 @@ impl<'genv, 'tcx> GlobalEnv<'genv, 'tcx> {
     }
 
     // reserves n kvids in the global kvar allocator so that there
-    // are no name clashes - NOTE this is used by `declare` beacuse 
+    // are no name clashes - NOTE this is used by `declare` beacuse
     // of the `Conj` encoding for Kvars where a single kvar is `remapped`
     // to a different kvar
     pub fn reserve_kvids(&self, n: usize) -> rty::KVid {

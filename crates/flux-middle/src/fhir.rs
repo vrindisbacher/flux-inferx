@@ -54,6 +54,7 @@ pub enum SinkType {
     DynamoGet,
     DynamoDelete,
     DynamoUpdate,
+    DynamoQuery,
     // S3 Operations
     S3PutObject,
     S3GetObject,
@@ -68,6 +69,7 @@ impl Into<SinkType> for flux_syntax::surface::SinkType {
             flux_syntax::surface::SinkType::DynamoGet => SinkType::DynamoGet,
             flux_syntax::surface::SinkType::DynamoDelete => SinkType::DynamoDelete,
             flux_syntax::surface::SinkType::DynamoUpdate => SinkType::DynamoUpdate,
+            flux_syntax::surface::SinkType::DynamoQuery => SinkType::DynamoQuery,
             flux_syntax::surface::SinkType::Unknown => SinkType::Unknown,
             flux_syntax::surface::SinkType::S3PutObject => SinkType::S3PutObject,
             flux_syntax::surface::SinkType::S3GetObject => SinkType::S3GetObject,

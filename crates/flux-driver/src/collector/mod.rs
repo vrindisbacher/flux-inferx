@@ -593,6 +593,7 @@ impl<'a, 'tcx> SpecCollector<'a, 'tcx> {
                         "DynamoGet" => FluxAttrKind::Sink(SinkType::DynamoGet),
                         "DynamoDelete" => FluxAttrKind::Sink(SinkType::DynamoDelete),
                         "DynamoUpdate" => FluxAttrKind::Sink(SinkType::DynamoUpdate),
+                        "DynamoQuery" => FluxAttrKind::Sink(SinkType::DynamoQuery),
                         // S3
                         "S3GetObject" => FluxAttrKind::Sink(SinkType::S3GetObject),
                         "S3PutObject" => FluxAttrKind::Sink(SinkType::S3PutObject),
@@ -725,6 +726,7 @@ enum SinkType {
     DynamoGet,
     DynamoDelete,
     DynamoUpdate,
+    DynamoQuery,
     // S3 Operations
     S3PutObject,
     S3GetObject,
@@ -739,6 +741,7 @@ impl Into<flux_syntax::surface::SinkType> for SinkType {
             SinkType::DynamoGet => surface::SinkType::DynamoGet,
             SinkType::DynamoDelete => surface::SinkType::DynamoDelete,
             SinkType::DynamoUpdate => surface::SinkType::DynamoUpdate,
+            SinkType::DynamoQuery => surface::SinkType::DynamoQuery,
             SinkType::Unknown => surface::SinkType::Unknown,
             SinkType::S3PutObject => surface::SinkType::S3PutObject,
             SinkType::S3GetObject => surface::SinkType::S3GetObject,
