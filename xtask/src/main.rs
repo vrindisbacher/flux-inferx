@@ -140,7 +140,7 @@ fn test(args: Test, rust_fixpoint: bool) -> anyhow::Result<()> {
         dst: local_sysroot_dir()?,
         build_libs: BuildLibs { force: false, tests: !args.no_lib_tests, libs: FluxLib::ALL },
     };
-    let flux = build_binary("flux", config.profile, false)?;
+    let flux = build_binary("flux-inferx", config.profile, false)?;
     install_sysroot(&config)?;
 
     Command::new("cargo")
@@ -163,7 +163,7 @@ fn lean_bench(args: LeanBench, rust_fixpoint: bool) -> anyhow::Result<()> {
         build_libs: BuildLibs { force: false, tests: false, libs: FluxLib::ALL },
     };
     install_sysroot(&config)?;
-    let flux = build_binary("flux", config.profile, false)?;
+    let flux = build_binary("flux-inferx", config.profile, false)?;
 
     let pos_path = PathBuf::from("tests/tests/pos");
     let lean_bench_dir = PathBuf::from("tests/lean_bench");
@@ -318,7 +318,7 @@ fn run_inner(
     };
 
     install_sysroot(&config)?;
-    let flux = build_binary("flux", config.profile, false)?;
+    let flux = build_binary("flux-inferx", config.profile, false)?;
 
     let mut rustc_flags = tests::default_flags();
     rustc_flags.extend(flags);
@@ -340,14 +340,14 @@ fn install(args: &Install, extra: &[&str], rust_fixpoint: bool) -> anyhow::Resul
     };
     install_sysroot(&config)?;
     Command::new("cargo")
-        .args(["install", "--path", "crates/flux-bin", "--force"])
+        .args(["install", "--path", "crates/flux-inferx-bin", "--force"])
         .args(extra)
         .run()
 }
 
 fn uninstall() -> anyhow::Result<()> {
     Command::new("cargo")
-        .args(["uninstall", "-p", "flux-bin"])
+        .args(["uninstall", "-p", "flux-inferx-bin"])
         .run()?;
     eprintln!("$ rm -rf ~/.flux");
     remove_path(&default_sysroot_dir())?;
@@ -440,17 +440,17 @@ fn install_sysroot(config: &SysrootConfig) -> anyhow::Result<()> {
 
     copy_file(build_binary("flux-driver", config.profile, config.rust_fixpoint)?, &config.dst)?;
 
-    let cargo_flux = build_binary("cargo-flux", config.profile, config.rust_fixpoint)?;
+    let cargo_flux = build_binary("cargo-flux-inferx", config.profile, config.rust_fixpoint)?;
 
     if config.build_libs.force {
         Command::new(&cargo_flux)
-            .args(["flux", "clean"])
+            .args(["flux-inferx", "clean"])
             .env(FLUX_SYSROOT, &config.dst)
             .run()?;
     }
 
     let artifacts = Command::new(cargo_flux)
-        .arg("flux")
+        .arg("flux-inferx")
         .args(
             config
                 .build_libs

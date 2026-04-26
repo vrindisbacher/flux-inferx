@@ -41,7 +41,7 @@ Next, run the following to build and install `flux` binaries
 cargo xtask install
 ```
 
-This will install two binaries `flux` and `cargo-flux` in your cargo home. These two binaries should be used
+This will install two binaries `flux` and `cargo-flux-inferx` in your cargo home. These two binaries should be used
 respectively to run Flux on either a single file or on a project using cargo. The installation process will
 also copy some files to `$HOME/.flux`.
 
@@ -84,7 +84,7 @@ fn inc(x: i32) -> i32 {
 }
 ```
 
-## Running on a package: `cargo-flux`
+## Running on a package: `cargo-flux-inferx`
 
 See this an
 Flux is integrated with `cargo` and can be invoked in a package as follows:
@@ -167,11 +167,11 @@ driver](https://rustc-dev-guide.rust-lang.org/rustc-driver.html?highlight=driver
 (similar to how clippy works) meaning it uses rustc as a library to "drive"
 compilation performing additional analysis along the way. Running the binary
 requires dynamically linking a correct version of `librustc`. Thus, to avoid the
-hassle you should never execute it directly. Instead, use `flux` or `cargo-flux`.
+hassle you should never execute it directly. Instead, use `flux` or `cargo-flux-inferx`.
 
 ## Editor Support
 
-This section assumes you have installed `cargo-flux`.
+This section assumes you have installed `cargo-flux-inferx`.
 
 ### Rust-Analyzer in VSCode
 
@@ -226,7 +226,7 @@ for all crates, including dependencies. This behavior is likely to change in the
 out what configurations make sense to have per package and which should only affect the current execution
 of `cargo flux`.
 
-You can see the format of the `metadata` in <https://flux-rs.github.io/flux/doc/flux_bin/struct.FluxMetadata.html>.
+You can see the format of the `metadata` in <https://flux-rs.github.io/flux/doc/flux_inferx_bin/struct.FluxMetadata.html>.
 
 ### `FLUXFLAGS` Environement Variable
 

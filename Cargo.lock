@@ -460,24 +460,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "flux-bin"
-version = "0.1.0"
-dependencies = [
- "anstyle",
- "anyhow",
- "cargo_metadata",
- "clap",
- "config",
- "flux-config",
- "home",
- "itertools 0.14.0",
- "serde",
- "serde_json",
- "tempfile",
- "toml",
-]
-
-[[package]]
 name = "flux-common"
 version = "0.1.0"
 dependencies = [
@@ -606,6 +588,24 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tracing",
+]
+
+[[package]]
+name = "flux-inferx-bin"
+version = "0.1.0"
+dependencies = [
+ "anstyle",
+ "anyhow",
+ "cargo_metadata",
+ "clap",
+ "config",
+ "flux-config",
+ "home",
+ "itertools 0.14.0",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "toml",
 ]
 
 [[package]]

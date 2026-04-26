@@ -1,4 +1,4 @@
-# Flux Repository - Copilot Coding Agent Instructions
+# Flux Inferx Repository - Copilot Coding Agent Instructions
 
 ## Overview
 
@@ -54,7 +54,7 @@ Flux is a refinement type checker for Rust. This is a Rust workspace with multip
 ```
 /
 ├── crates/           - Main Flux implementation crates
-│   ├── flux-bin/     - CLI binary (flux, cargo-flux)
+│   ├── flux-inferx-bin/     - CLI binary (flux, cargo-flux-inferx)
 │   ├── flux-driver/  - Rustc driver integration
 │   ├── flux-middle/  - Core type system and refinement types
 │   ├── flux-refineck/ - Refinement type checker
@@ -92,7 +92,7 @@ Flux is a refinement type checker for Rust. This is a Rust workspace with multip
 - **Flux is a rustc driver**: It integrates with the Rust compiler as a custom driver
 - **Two-stage execution**: 
   1. Build flux-driver and cargo-flux binaries
-  2. Use cargo-flux to build libraries with refinement types
+  2. Use cargo-flux-inferx to build libraries with refinement types
 - **Custom test framework**: Uses `cargo xtask test` which invokes the test harness in `tests/` package
 
 ## CI Pipeline

@@ -7,7 +7,7 @@ use std::{
 use anyhow::anyhow;
 use cargo_metadata::{Metadata, camino::Utf8Path};
 use clap::Parser as _;
-use flux_bin::{
+use flux_inferx_bin::{
     FluxMetadata,
     cargo_flux_opts::{CargoFluxCommand, Cli},
     utils::{
@@ -19,11 +19,11 @@ use itertools::Itertools;
 use tempfile::NamedTempFile;
 
 fn main() {
-    let Cli::Flux { check_opts, command, version, verbose } = Cli::parse();
+    let Cli::FluxInferx { check_opts, command, version, verbose } = Cli::parse();
 
     // Handle version flag (-V or --version with optional -v for verbose)
     if version {
-        print_version_and_exit("cargo-flux", verbose > 0);
+        print_version_and_exit("cargo-flux-inferx", verbose > 0);
     }
 
     let command = command.unwrap_or(CargoFluxCommand::Check(check_opts));
@@ -31,7 +31,7 @@ fn main() {
     match run(command) {
         Ok(exit_code) => exit(exit_code),
         Err(e) => {
-            println!("Failed to run `cargo-flux`, error={e}");
+            println!("Failed to run `cargo-flux-inferx`, error={e}");
             exit(EXIT_ERR)
         }
     };

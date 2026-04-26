@@ -2,7 +2,7 @@
     src="assets/logo-wide.svg"
     alt="flux logo" class="flux-logo">
 
-Flux is a refinement type checker for Rust.
+Flux-Inferx is a policy inference tool based on Flux: a refinement type checker for Rust.
 
 # Help and Discussions
 
