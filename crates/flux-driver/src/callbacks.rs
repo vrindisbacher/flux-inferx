@@ -141,7 +141,7 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
 
         let mut crash_log: Vec<(DefId, String)> = Vec::new();
         let mut seen_sols = FxIndexSet::default();
-        let mut solution_log = Vec::new();
+        let mut solution_log: FxIndexMap<String, Vec<(fhir::SinkType, Vec<(_, _)>)>> = FxIndexMap::default();
 
         for source in sources.iter() {
             // clear def ids and fixpoint context maps for each source
@@ -529,7 +529,17 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                         if !solutions.is_empty() {
                             if !seen_sols.contains(source) {
                                 let sink_for = genv.sink_for(*sink_def_id);
-                                solution_log.push((*source, sink_for, solutions));
+                                let source_assoc_names = genv.source_for(source);
+                                for name in source_assoc_names {
+                                    match solution_log.get_mut(&name) {
+                                        Some(v) => {
+                                            v.push((sink_for, solutions.clone()));
+                                        } 
+                                        None => {
+                                            solution_log.insert(name, vec![(sink_for, solutions.clone())]);
+                                        }
+                                    };
+                                }
                                 seen_sols.insert(*source);
                             } 
                         }
@@ -538,14 +548,16 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
             }
         }
 
-        // ── Print solutions (same format as before) ───────────────────────────────────
-        for (source, sink_for, solutions) in &solution_log {
+        // ── Print solutions ───────────────────────────────────
+        for (source, entries) in solution_log {
             println!("SOLUTION FOR {:?}", source);
-            println!("{sink_for:?}");
-            for (kvar_id, res) in solutions {
-                println!("{kvar_id:?}: {:#?}", res);
+            for (sink_for, solutions) in entries {
+                println!("{sink_for:?}");
+                for (kvar_id, res) in solutions {
+                    println!("{kvar_id:?}: {:#?}", res);
+                }
+                println!();
             }
-            println!();
         }
 
         // ── Print crash summary ───────────────────────────────────────────────────────

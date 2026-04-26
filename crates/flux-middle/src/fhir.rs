@@ -86,7 +86,7 @@ pub enum Attr {
     ShouldFail,
     InferOpts(PartialInferOpts),
     NoPanic,
-    Source,
+    Source(Vec<String>),
     Sink(SinkType),
 }
 
@@ -111,7 +111,17 @@ impl AttrMap<'_> {
     }
 
     pub(crate) fn source(&self) -> bool {
-        self.attrs.iter().any(|attr| matches!(attr, Attr::Source))
+        self.attrs
+            .iter()
+            .any(|attr| matches!(attr, Attr::Source(..)))
+    }
+
+    pub(crate) fn source_for(&self) -> Vec<String> {
+        self.attrs
+            .iter()
+            .find_map(|attr| if let Attr::Source(names) = attr { Some(names) } else { None })
+            .unwrap_or_else(|| bug!("Source should always have associated names"))
+            .clone()
     }
 
     pub(crate) fn sink(&self) -> bool {

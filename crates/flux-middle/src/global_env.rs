@@ -647,6 +647,11 @@ impl<'genv, 'tcx> GlobalEnv<'genv, 'tcx> {
         self.fhir_attr_map(def_id).source()
     }
 
+    pub fn source_for(self, def_id: impl IntoQueryParam<DefId>) -> Vec<String> {
+        self.inner
+            .queries
+            .source_for(self, def_id.into_query_param())
+    }
     /// Transitively follow the parent-chain of `def_id` to find the first containing item with an
     /// explicit `#[flux::sink]` annotation and return whether that item is a sink or not.
     /// If no explicit annotation is found, return `false`.

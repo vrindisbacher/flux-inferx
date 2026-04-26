@@ -487,6 +487,8 @@ fn encode_def_ids<K: Eq + Hash + Copy>(
                 if genv.is_sink(def_id) {
                     tables.sink_for.insert(key, genv.sink_for(def_id));
                 }
+                // NOTE(VR): we explicitly never insert sources here because we generally don't expect them to be
+                // none local
             }
             DefKind::Ctor(_, CtorKind::Fn) => {
                 tables
