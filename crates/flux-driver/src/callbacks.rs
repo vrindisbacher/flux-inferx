@@ -140,7 +140,6 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
         }
 
         let mut crash_log: Vec<(DefId, String)> = Vec::new();
-        let mut seen_sols = FxIndexSet::default();
         let mut solution_log: FxIndexMap<String, Vec<(fhir::SinkType, Vec<(_, _)>)>> = FxIndexMap::default();
 
         for source in sources.iter() {
@@ -527,21 +526,18 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                         }
 
                         if !solutions.is_empty() {
-                            if !seen_sols.contains(source) {
-                                let sink_for = genv.sink_for(*sink_def_id);
-                                let source_assoc_names = genv.source_for(source);
-                                for name in source_assoc_names {
-                                    match solution_log.get_mut(&name) {
-                                        Some(v) => {
-                                            v.push((sink_for, solutions.clone()));
-                                        } 
-                                        None => {
-                                            solution_log.insert(name, vec![(sink_for, solutions.clone())]);
-                                        }
-                                    };
-                                }
-                                seen_sols.insert(*source);
-                            } 
+                            let sink_for = genv.sink_for(*sink_def_id);
+                            let source_assoc_names = genv.source_for(source);
+                            for name in source_assoc_names {
+                                match solution_log.get_mut(&name) {
+                                    Some(v) => {
+                                        v.push((sink_for, solutions.clone()));
+                                    } 
+                                    None => {
+                                        solution_log.insert(name, vec![(sink_for, solutions.clone())]);
+                                    }
+                                };
+                            }
                         }
                     }
                 }
