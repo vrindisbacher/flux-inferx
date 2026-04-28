@@ -417,13 +417,13 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                             task.add_cut_kvar(fixpoint_kvid);
                         }
 
+                        // println!("{task}");
+
                         // add qualifiers to the task
-                        let mut seen = FxIndexSet::default();
                         for sink in sinks_to_check.iter() {
                             let sink_for = genv.sink_for(*sink) ;
-                            if !seen.contains(&sink_for) {
                                 match sink_for {
-                                    fhir::SinkType::DynamoPut => {
+fhir::SinkType::DynamoPut => {
                                         task.string_qualifiers.push(
                                             "
 ;; qualifiers for DynamoPut - we want to be able to infer table name and items being set
@@ -438,6 +438,27 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
 
 (qualif DynPutIsNum ((a0 Adt2831635821) (a1# Str))
     (= mkadt1194516581$1 (fld1924543948$0 (Map_select (fld2831635821$1 a0) a1))))
+
+(qualif DynPutIsBinary ((a0 Adt2831635821) (a1# Str))
+    (= mkadt1194516581$3 (fld1924543948$0 (Map_select (fld2831635821$1 a0) a1))))
+
+(qualif DynPutIsBinarySet ((a0 Adt2831635821) (a1# Str))
+    (= mkadt1194516581$4 (fld1924543948$0 (Map_select (fld2831635821$1 a0) a1))))
+
+(qualif DynPutIsList ((a0 Adt2831635821) (a1# Str))
+    (= mkadt1194516581$5 (fld1924543948$0 (Map_select (fld2831635821$1 a0) a1))))
+
+(qualif DynPutIsMap ((a0 Adt2831635821) (a1# Str))
+    (= mkadt1194516581$6 (fld1924543948$0 (Map_select (fld2831635821$1 a0) a1))))
+
+(qualif DynPutIsNumberSet ((a0 Adt2831635821) (a1# Str))
+    (= mkadt1194516581$7 (fld1924543948$0 (Map_select (fld2831635821$1 a0) a1))))
+
+(qualif DynPutIsNull ((a0 Adt2831635821) (a1# Str))
+    (= mkadt1194516581$8 (fld1924543948$0 (Map_select (fld2831635821$1 a0) a1))))
+
+(qualif DynPutIsStringSet ((a0 Adt2831635821) (a1# Str))
+    (= mkadt1194516581$9 (fld1924543948$0 (Map_select (fld2831635821$1 a0) a1))))
 
 (qualif DynPutStrVal ((a0 Adt2831635821) (a1# Str) (a2# Str))
     (= (fld1924543948$1 (Map_select (fld2831635821$1 a0) a1)) a2))
@@ -470,6 +491,27 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
 (qualif DynGetIsNum ((a0 Adt309293745) (a1# Str))
     (= mkadt1194516581$1 (fld1924543948$0 (Map_select (fld309293745$1 a0) a1))))
 
+(qualif DynGetIsBinary ((a0 Adt309293745) (a1# Str))
+    (= mkadt1194516581$3 (fld1924543948$0 (Map_select (fld309293745$1 a0) a1))))
+
+(qualif DynGetIsBinarySet ((a0 Adt309293745) (a1# Str))
+    (= mkadt1194516581$4 (fld1924543948$0 (Map_select (fld309293745$1 a0) a1))))
+
+(qualif DynGetIsList ((a0 Adt309293745) (a1# Str))
+    (= mkadt1194516581$5 (fld1924543948$0 (Map_select (fld309293745$1 a0) a1))))
+
+(qualif DynGetIsMap ((a0 Adt309293745) (a1# Str))
+    (= mkadt1194516581$6 (fld1924543948$0 (Map_select (fld309293745$1 a0) a1))))
+
+(qualif DynGetIsNumberSet ((a0 Adt309293745) (a1# Str))
+    (= mkadt1194516581$7 (fld1924543948$0 (Map_select (fld309293745$1 a0) a1))))
+
+(qualif DynGetIsNull ((a0 Adt309293745) (a1# Str))
+    (= mkadt1194516581$8 (fld1924543948$0 (Map_select (fld309293745$1 a0) a1))))
+
+(qualif DynGetIsStringSet ((a0 Adt309293745) (a1# Str))
+    (= mkadt1194516581$9 (fld1924543948$0 (Map_select (fld309293745$1 a0) a1))))
+
 (qualif DynGetStrVal ((a0 Adt309293745) (a1# Str) (a2# Str))
     (= (fld1924543948$1 (Map_select (fld309293745$1 a0) a1)) a2))
 
@@ -485,18 +527,277 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                                             "
                                         )
                                     }
-                                    // TODO ADD QUALIFS FOR THESE
-                                    fhir::SinkType::DynamoDelete => {}
-                                    fhir::SinkType::DynamoUpdate => {}
-                                    fhir::SinkType::S3PutObject => {}
-                                    fhir::SinkType::S3GetObject => {}
-                                    fhir::SinkType::S3DeleteObject => {}
+                                    fhir::SinkType::DynamoDelete => {
+                                        task.string_qualifiers.push(
+                                            "
+;; qualifiers for DynamoDelete - we want to be able to infer table name and key
+
+;; qualifiers to determine the variant of
+
+(qualif DynDeleteIsBool ((a0 Adt1346103878) (a1# Str))
+    (= mkadt1194516581$2 (fld1924543948$0 (Map_select (fld1346103878$1 a0) a1))))
+
+(qualif DynDeleteIsStr ((a0 Adt1346103878) (a1# Str))
+    (= mkadt1194516581$0  (fld1924543948$0 (Map_select (fld1346103878$1 a0) a1))))
+
+(qualif DynDeleteIsNum ((a0 Adt1346103878) (a1# Str))
+    (= mkadt1194516581$1 (fld1924543948$0 (Map_select (fld1346103878$1 a0) a1))))
+
+(qualif DynDeleteIsBinary ((a0 Adt1346103878) (a1# Str))
+    (= mkadt1194516581$3 (fld1924543948$0 (Map_select (fld1346103878$1 a0) a1))))
+
+(qualif DynDeleteIsBinarySet ((a0 Adt1346103878) (a1# Str))
+    (= mkadt1194516581$4 (fld1924543948$0 (Map_select (fld1346103878$1 a0) a1))))
+
+(qualif DynDeleteIsList ((a0 Adt1346103878) (a1# Str))
+    (= mkadt1194516581$5 (fld1924543948$0 (Map_select (fld1346103878$1 a0) a1))))
+
+(qualif DynDeleteIsMap ((a0 Adt1346103878) (a1# Str))
+    (= mkadt1194516581$6 (fld1924543948$0 (Map_select (fld1346103878$1 a0) a1))))
+
+(qualif DynDeleteIsNumberSet ((a0 Adt1346103878) (a1# Str))
+    (= mkadt1194516581$7 (fld1924543948$0 (Map_select (fld1346103878$1 a0) a1))))
+
+(qualif DynDeleteIsNull ((a0 Adt1346103878) (a1# Str))
+    (= mkadt1194516581$8 (fld1924543948$0 (Map_select (fld1346103878$1 a0) a1))))
+
+(qualif DynDeleteIsStringSet ((a0 Adt1346103878) (a1# Str))
+    (= mkadt1194516581$9 (fld1924543948$0 (Map_select (fld1346103878$1 a0) a1))))
+
+(qualif DynDeleteStrVal ((a0 Adt1346103878) (a1# Str) (a2# Str))
+    (= (fld1924543948$1 (Map_select (fld1346103878$1 a0) a1)) a2))
+
+(qualif DynDeleteBoolValT ((a0 Adt1346103878) (a1# Str))
+    (= true (fld1924543948$2 (Map_select (fld1346103878$1 a0) a1))))
+
+(qualif DynDeleteBoolValF ((a0 Adt1346103878) (a1# Str))
+    (= false (fld1924543948$2 (Map_select (fld1346103878$1 a0) a1))))
+
+;; Table name
+(qualif DynDeleteTableName ((a0 Adt1346103878) (a1# Str))
+    (= (fld1346103878$0 a0) a1))
+                                            "
+                                        )
+                                    }
+                                    fhir::SinkType::DynamoUpdate => {
+                                        task.string_qualifiers.push(
+                                            "
+;; qualifiers for DynamoUpdate - we want to be able to infer table name and key
+
+;; qualifiers to determine the variant of
+
+(qualif DynUpdateIsBool ((a0 Adt139055347) (a1# Str))
+    (= mkadt1194516581$2 (fld1924543948$0 (Map_select (fld139055347$1 a0) a1))))
+
+(qualif DynUpdateIsStr ((a0 Adt139055347) (a1# Str))
+    (= mkadt1194516581$0  (fld1924543948$0 (Map_select (fld139055347$1 a0) a1))))
+
+(qualif DynUpdateIsNum ((a0 Adt139055347) (a1# Str))
+    (= mkadt1194516581$1 (fld1924543948$0 (Map_select (fld139055347$1 a0) a1))))
+
+(qualif DynUpdateIsBinary ((a0 Adt139055347) (a1# Str))
+    (= mkadt1194516581$3 (fld1924543948$0 (Map_select (fld139055347$1 a0) a1))))
+
+(qualif DynUpdateIsBinarySet ((a0 Adt139055347) (a1# Str))
+    (= mkadt1194516581$4 (fld1924543948$0 (Map_select (fld139055347$1 a0) a1))))
+
+(qualif DynUpdateIsList ((a0 Adt139055347) (a1# Str))
+    (= mkadt1194516581$5 (fld1924543948$0 (Map_select (fld139055347$1 a0) a1))))
+
+(qualif DynUpdateIsMap ((a0 Adt139055347) (a1# Str))
+    (= mkadt1194516581$6 (fld1924543948$0 (Map_select (fld139055347$1 a0) a1))))
+
+(qualif DynUpdateIsNumberSet ((a0 Adt139055347) (a1# Str))
+    (= mkadt1194516581$7 (fld1924543948$0 (Map_select (fld139055347$1 a0) a1))))
+
+(qualif DynUpdateIsNull ((a0 Adt139055347) (a1# Str))
+    (= mkadt1194516581$8 (fld1924543948$0 (Map_select (fld139055347$1 a0) a1))))
+
+(qualif DynUpdateIsStringSet ((a0 Adt139055347) (a1# Str))
+    (= mkadt1194516581$9 (fld1924543948$0 (Map_select (fld139055347$1 a0) a1))))
+
+(qualif DynUpdateStrVal ((a0 Adt139055347) (a1# Str) (a2# Str))
+    (= (fld1924543948$1 (Map_select (fld139055347$1 a0) a1)) a2))
+
+(qualif DynUpdateBoolValT ((a0 Adt139055347) (a1# Str))
+    (= true (fld1924543948$2 (Map_select (fld139055347$1 a0) a1))))
+
+(qualif DynUpdateBoolValF ((a0 Adt139055347) (a1# Str))
+    (= false (fld1924543948$2 (Map_select (fld139055347$1 a0) a1))))
+
+;; Table name
+(qualif DynUpdateTableName ((a0 Adt139055347) (a1# Str))
+    (= (fld139055347$0 a0) a1))
+
+;; Update expression
+(qualif DynUpdateUpdateExpression ((a0 Adt139055347) (a1# Str))
+    (= (fld139055347$2 a0) a1))
+
+;; Expression attribute names
+(qualif DynUpdateExprAttrName ((a0 Adt139055347) (a1# Str) (a2# Str))
+    (= (Map_select (fld139055347$3 a0) a1) a2))
+
+;; Expression attribute values - type tags
+(qualif DynUpdateExprAttrIsStr ((a0 Adt139055347) (a1# Str))
+    (= mkadt1194516581$0 (fld1924543948$0 (Map_select (fld139055347$4 a0) a1))))
+
+(qualif DynUpdateExprAttrIsNum ((a0 Adt139055347) (a1# Str))
+    (= mkadt1194516581$1 (fld1924543948$0 (Map_select (fld139055347$4 a0) a1))))
+
+(qualif DynUpdateExprAttrIsBool ((a0 Adt139055347) (a1# Str))
+    (= mkadt1194516581$2 (fld1924543948$0 (Map_select (fld139055347$4 a0) a1))))
+
+(qualif DynUpdateExprAttrIsBinary ((a0 Adt139055347) (a1# Str))
+    (= mkadt1194516581$3 (fld1924543948$0 (Map_select (fld139055347$4 a0) a1))))
+
+(qualif DynUpdateExprAttrIsBinarySet ((a0 Adt139055347) (a1# Str))
+    (= mkadt1194516581$4 (fld1924543948$0 (Map_select (fld139055347$4 a0) a1))))
+
+(qualif DynUpdateExprAttrIsList ((a0 Adt139055347) (a1# Str))
+    (= mkadt1194516581$5 (fld1924543948$0 (Map_select (fld139055347$4 a0) a1))))
+
+(qualif DynUpdateExprAttrIsMap ((a0 Adt139055347) (a1# Str))
+    (= mkadt1194516581$6 (fld1924543948$0 (Map_select (fld139055347$4 a0) a1))))
+
+(qualif DynUpdateExprAttrIsNumberSet ((a0 Adt139055347) (a1# Str))
+    (= mkadt1194516581$7 (fld1924543948$0 (Map_select (fld139055347$4 a0) a1))))
+
+(qualif DynUpdateExprAttrIsNull ((a0 Adt139055347) (a1# Str))
+    (= mkadt1194516581$8 (fld1924543948$0 (Map_select (fld139055347$4 a0) a1))))
+
+(qualif DynUpdateExprAttrIsStringSet ((a0 Adt139055347) (a1# Str))
+    (= mkadt1194516581$9 (fld1924543948$0 (Map_select (fld139055347$4 a0) a1))))
+
+;; Expression attribute values - concrete values
+(qualif DynUpdateExprAttrStrVal ((a0 Adt139055347) (a1# Str) (a2# Str))
+    (= (fld1924543948$1 (Map_select (fld139055347$4 a0) a1)) a2))
+
+(qualif DynUpdateExprAttrBoolValT ((a0 Adt139055347) (a1# Str))
+    (= true (fld1924543948$2 (Map_select (fld139055347$4 a0) a1))))
+
+(qualif DynUpdateExprAttrBoolValF ((a0 Adt139055347) (a1# Str))
+    (= false (fld1924543948$2 (Map_select (fld139055347$4 a0) a1))))
+                                            "
+                                        )
+                                    }
+                                    fhir::SinkType::DynamoQuery => {
+                                        task.string_qualifiers.push(
+                                            "
+;; qualifiers for DynamoQuery - we want to be able to infer table name and key
+
+;; Consistent read
+(qualif DynQueryConsistentReadT ((a0 Adt4204386769))
+    (= true (fld4204386769$1 a0)))
+
+(qualif DynQueryConsistentReadF ((a0 Adt4204386769))
+    (= false (fld4204386769$1 a0)))
+
+;; Index name
+(qualif DynQueryIndexName ((a0 Adt4204386769) (a1# Str))
+    (= (fld4204386769$2 a0) a1))
+
+;; Condition expression
+(qualif DynQueryConditionExpression ((a0 Adt4204386769) (a1# Str))
+    (= (fld4204386769$3 a0) a1))
+
+;; Filter expression
+(qualif DynQueryFilterExpression ((a0 Adt4204386769) (a1# Str))
+    (= (fld4204386769$4 a0) a1))
+
+;; Expression attribute names
+(qualif DynQueryExprAttrName ((a0 Adt4204386769) (a1# Str) (a2# Str))
+    (= (Map_select (fld4204386769$5 a0) a1) a2))
+
+;; Expression attribute values - type tags
+(qualif DynQueryExprAttrIsStr ((a0 Adt4204386769) (a1# Str))
+    (= mkadt1194516581$0 (fld1924543948$0 (Map_select (fld4204386769$6 a0) a1))))
+
+(qualif DynQueryExprAttrIsNum ((a0 Adt4204386769) (a1# Str))
+    (= mkadt1194516581$1 (fld1924543948$0 (Map_select (fld4204386769$6 a0) a1))))
+
+(qualif DynQueryExprAttrIsBool ((a0 Adt4204386769) (a1# Str))
+    (= mkadt1194516581$2 (fld1924543948$0 (Map_select (fld4204386769$6 a0) a1))))
+
+(qualif DynQueryExprAttrIsBinary ((a0 Adt4204386769) (a1# Str))
+    (= mkadt1194516581$3 (fld1924543948$0 (Map_select (fld4204386769$6 a0) a1))))
+
+(qualif DynQueryExprAttrIsBinarySet ((a0 Adt4204386769) (a1# Str))
+    (= mkadt1194516581$4 (fld1924543948$0 (Map_select (fld4204386769$6 a0) a1))))
+
+(qualif DynQueryExprAttrIsList ((a0 Adt4204386769) (a1# Str))
+    (= mkadt1194516581$5 (fld1924543948$0 (Map_select (fld4204386769$6 a0) a1))))
+
+(qualif DynQueryExprAttrIsMap ((a0 Adt4204386769) (a1# Str))
+    (= mkadt1194516581$6 (fld1924543948$0 (Map_select (fld4204386769$6 a0) a1))))
+
+(qualif DynQueryExprAttrIsNumberSet ((a0 Adt4204386769) (a1# Str))
+    (= mkadt1194516581$7 (fld1924543948$0 (Map_select (fld4204386769$6 a0) a1))))
+
+(qualif DynQueryExprAttrIsNull ((a0 Adt4204386769) (a1# Str))
+    (= mkadt1194516581$8 (fld1924543948$0 (Map_select (fld4204386769$6 a0) a1))))
+
+(qualif DynQueryExprAttrIsStringSet ((a0 Adt4204386769) (a1# Str))
+    (= mkadt1194516581$9 (fld1924543948$0 (Map_select (fld4204386769$6 a0) a1))))
+
+;; Expression attribute values - concrete values
+(qualif DynQueryExprAttrStrVal ((a0 Adt4204386769) (a1# Str) (a2# Str))
+    (= (fld1924543948$1 (Map_select (fld4204386769$6 a0) a1)) a2))
+
+(qualif DynQueryExprAttrBoolValT ((a0 Adt4204386769) (a1# Str))
+    (= true (fld1924543948$2 (Map_select (fld4204386769$6 a0) a1))))
+
+(qualif DynQueryExprAttrBoolValF ((a0 Adt4204386769) (a1# Str))
+    (= false (fld1924543948$2 (Map_select (fld4204386769$6 a0) a1))))
+
+;; Table name
+(qualif DynQueryTableName ((a0 Adt4204386769) (a1# Str))
+    (= (fld4204386769$0 a0) a1))
+                                            "
+                                        )
+                                    }
+                                    fhir::SinkType::S3PutObject => {
+                                        task.string_qualifiers.push(
+                                            "
+;; qualifiers for S3Put - we want to be able to infer bucket name and object key
+
+;; Bucket name
+(qualif S3PutBucketName ((a0 Adt2834044593) (a1# Str))
+    (= (fld2834044593$0 a0) a1))
+
+;; Object Key
+(qualif S3PutObjectKey ((a0 Adt2834044593) (a1# Str))
+    (= (fld2834044593$1 a0) a1))
+                                            "
+                                        )
+                                    }
+                                    fhir::SinkType::S3GetObject => {
+                                        task.string_qualifiers.push(
+                                            "
+(qualif S3GetBucketName ((a0 Adt2571902642) (a1# Str))
+    (= (fld2571902642$0 a0) a1))
+
+(qualif S3GetObjectKey ((a0 Adt2571902642) (a1# Str))
+    (= (fld2571902642$1 a0) a1))
+                                            "
+                                        )
+                                    }
+                                    fhir::SinkType::S3DeleteObject => {
+                                        task.string_qualifiers.push(
+                                            "
+;; qualifiers for S3Delete - we want to be able to infer bucket name and object key
+
+;; Bucket name
+(qualif S3DeleteBucketName ((a0 Adt942972120) (a1# Str))
+    (= (fld942972120$0 a0) a1))
+
+;; Object Key
+(qualif S3DeleteObjectKey ((a0 Adt942972120) (a1# Str))
+    (= (fld942972120$1 a0) a1))
+                                            "
+                                        )
+                                    }
                                     fhir::SinkType::Unknown => {}
-                                    fhir::SinkType::DynamoQuery => {}
                                 }
-                            } else {
-                                seen.insert(sink_for);
-                            }
                         }
 
                         let verification_result = match task.run() {
@@ -532,7 +833,7 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                                 match solution_log.get_mut(&name) {
                                     Some(v) => {
                                         v.push((sink_for, solutions.clone()));
-                                    } 
+                                    }
                                     None => {
                                         solution_log.insert(name, vec![(sink_for, solutions.clone())]);
                                     }
