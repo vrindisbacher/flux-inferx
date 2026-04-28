@@ -243,6 +243,7 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                     mega_task.constraint = fixpoint::Constraint::Conj(vec![existing, consumer]);
                 }
 
+                // println!("{mega_task}");
                 let verification_result = match mega_task.run() {
                     Ok(r) => r,
                     Err(err) => {
@@ -252,6 +253,7 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                         continue;
                     }
                 };
+
 
                 if let FixpointStatus::Crash(ref crash_reason) = verification_result.status {
                         // println!("FAILED FOR {source:?}");
@@ -411,7 +413,7 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                         }
 
                         // println!("{task}");
-
+ 
                         // add qualifiers to the task
                         for sink in sinks_to_check.iter() {
                             let sink_for = genv.sink_for(*sink) ;
@@ -796,7 +798,6 @@ fhir::SinkType::DynamoPut => {
                         let verification_result = match task.run() {
                             Ok(r) => r,
                             Err(err) => {
-                        // println!("{mega_task}");
                         // bug!();
                                 crash_log.push((*source, format!("per-sink task run failed in cut phase: {err}")));
                                 continue;
@@ -1019,7 +1020,6 @@ impl<'genv, 'tcx> CrateChecker<'genv, 'tcx> {
 
         // Dummy items generated for extern specs are excluded from metrics
         if genv.is_dummy(def_id.local_id()) {
-            println!("EXIT IS DUMMY");
             return Ok(());
         }
 
