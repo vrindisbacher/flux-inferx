@@ -280,15 +280,8 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                             bug!("Sink KVar had no solution in mono constraint")
                         });
 
-                        use std::panic::AssertUnwindSafe;
-                        let res = match flux_common::bug::catch_bugs("", AssertUnwindSafe(||
-                            base_fcx.fixpoint_to_solution(sol))) {
-                                Ok(r) => r,
-                                Err(e) => {
-                                    crash_log.push((*source, format!("Crashed turning kvar solution to rty expr for source: {source:?} -> {sink_def_id:?}. The error was: {e:?}")));
-                                    continue;
-                                }
-                            };
+
+                        let res = base_fcx.fixpoint_to_solution(sol);
                         let kvar_sort = res.vars()[0].expect_sort().clone();
                         let simplified_sol = res
                             .skip_binder_ref()
@@ -826,19 +819,17 @@ fhir::SinkType::DynamoPut => {
                             solutions.push((*kvar_id, res));
                         }
 
-                        if !solutions.is_empty() {
-                            let sink_for = genv.sink_for(*sink_def_id);
-                            let source_assoc_names = genv.source_for(source);
-                            for name in source_assoc_names {
-                                match solution_log.get_mut(&name) {
-                                    Some(v) => {
-                                        v.push((sink_for, solutions.clone()));
-                                    }
-                                    None => {
-                                        solution_log.insert(name, vec![(sink_for, solutions.clone())]);
-                                    }
-                                };
-                            }
+                        let sink_for = genv.sink_for(*sink_def_id);
+                        let source_assoc_names = genv.source_for(source);
+                        for name in source_assoc_names {
+                            match solution_log.get_mut(&name) {
+                                Some(v) => {
+                                    v.push((sink_for, solutions.clone()));
+                                }
+                                None => {
+                                    solution_log.insert(name, vec![(sink_for, solutions.clone())]);
+                                }
+                            };
                         }
                     }
                 }
