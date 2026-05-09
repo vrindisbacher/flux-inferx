@@ -288,7 +288,9 @@ fn check_crate(genv: GlobalEnv) -> Result<(), ErrorGuaranteed> {
                         let simplified_sol = res
                             .skip_binder_ref()
                             .simplify(&SnapshotMap::default())
-                            .normalize(genv);
+                            .normalize(genv)
+                            .eliminate_dead_variables();
+
                         let disjuncts = simplified_sol.to_dnf();
 
                         let mut constraints = Vec::new();

@@ -6,8 +6,7 @@ extern crate rustc_middle;
 extern crate rustc_trait_selection;
 
 use flux_rustc_bridge::lowering::resolve_call_query;
-use rustc_data_structures::fx::FxIndexMap;
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_data_structures::fx::{FxIndexMap, FxIndexSet};
 use rustc_hir::{def::DefKind, def_id::DefId};
 use rustc_infer::infer::TyCtxtInferExt;
 use rustc_middle::{
@@ -52,7 +51,7 @@ impl CallGraph {
     /// Gets all transitive callees from a set of roots
     pub fn transitive_callees(&self, roots: &[DefId]) -> Vec<DefId> {
         let mut result = Vec::new();
-        let mut seen = FxHashSet::default();
+        let mut seen = FxIndexSet::default();
         let mut worklist: Vec<DefId> = roots.to_vec();
 
         while let Some(def_id) = worklist.pop() {
@@ -124,7 +123,7 @@ impl CallGraph {
     /// Gets all of the paths upwards from the start through callers to a top level fn
     pub fn callers_paths(&self, start: DefId) -> Vec<Vec<DefId>> {
         // build a reverse map from fns to a list of their callers
-        let mut reverse: FxHashMap<DefId, Vec<DefId>> = FxHashMap::default();
+        let mut reverse: FxIndexMap<DefId, Vec<DefId>> = FxIndexMap::default();
         for (caller, callees) in &self.inner {
             for callee in callees {
                 reverse.entry(*callee).or_default().push(*caller);
@@ -173,12 +172,12 @@ pub enum CannotResolveReason {
 #[derive(Debug, Clone)]
 pub struct GraphBuildResult {
     pub call_graph: CallGraph,
-    pub resolution_failures: FxHashMap<DefId, CannotResolveReason>,
+    pub resolution_failures: FxIndexMap<DefId, CannotResolveReason>,
 }
 
 /// Builds the call graph starting from the root function. If we encounter a call we can't resolve, we add it to the resolution_failures map and keep going.
 pub fn build_call_graph(tcx: TyCtxt, roots: &[DefId]) -> GraphBuildResult {
-    let mut resolution_failures = FxHashMap::default();
+    let mut resolution_failures = FxIndexMap::default();
     let mut call_graph: CallGraph = CallGraph::new();
 
     if roots.iter().any(|root| !tcx.def_kind(*root).is_fn_like()) {
@@ -238,7 +237,7 @@ fn get_callees(tcx: &TyCtxt, caller_def_id: DefId) -> (Vec<DefId>, Vec<CannotRes
         // Pick up coroutine bodies produced by async blocks / generators.
         for stmt in &bb.statements {
             if let rustc_middle::mir::StatementKind::Assign(assign) = &stmt.kind {
-                let (_place, rvalue) = &**assign;
+                let rvalue = &assign.1;
                 if let rustc_middle::mir::Rvalue::Aggregate(kind, _) = rvalue {
                     if let rustc_middle::mir::AggregateKind::Coroutine(def_id, ..) = &**kind {
                         callees.push(*def_id);
@@ -282,7 +281,7 @@ fn explore(
     tcx: TyCtxt,
     roots: &[DefId],
     call_graph: &mut CallGraph,
-    resolution_failures: &mut FxHashMap<DefId, CannotResolveReason>,
+    resolution_failures: &mut FxIndexMap<DefId, CannotResolveReason>,
 ) {
     let mut worklist: Vec<DefId> = Vec::new();
 

@@ -8,12 +8,11 @@ use flux_rustc_bridge::{
     const_eval::{scalar_to_bits, scalar_to_int, scalar_to_uint},
     ty::{Const, ConstKind, ValTree, VariantIdx},
 };
-use hashbrown::HashSet;
 use itertools::Itertools;
 use liquid_fixpoint::ThyFunc;
 use rustc_abi::{FIRST_VARIANT, FieldIdx};
 use rustc_data_structures::{
-    fx::{FxHashMap, FxIndexMap},
+    fx::{FxHashMap, FxIndexMap, FxIndexSet},
     snapshot_map::SnapshotMap,
 };
 use rustc_hir::def_id::DefId;
@@ -1989,10 +1988,153 @@ pub(crate) mod pretty {
     }
 }
 
+impl Expr {
+    fn mentions_outer(&self, depth: usize) -> bool {
+        match self.kind() {
+            ExprKind::Var(var) => {
+                match var {
+                    Var::Free(_) | Var::EarlyParam(_) | Var::EVar(_) | Var::ConstGeneric(_) => true,
+                    Var::Bound(debruijn, _) => debruijn.as_usize() > depth,
+                }
+            }
+            ExprKind::Local(_) => true,
+            ExprKind::BinaryOp(_, e1, e2) => e1.mentions_outer(depth) || e2.mentions_outer(depth),
+            ExprKind::UnaryOp(_, e) => e.mentions_outer(depth),
+            ExprKind::FieldProj(e, _) | ExprKind::PathProj(e, _) | ExprKind::IsCtor(_, _, e) => {
+                e.mentions_outer(depth)
+            }
+            ExprKind::Tuple(flds) | ExprKind::Ctor(_, flds) => {
+                flds.iter().any(|e| e.mentions_outer(depth))
+            }
+            ExprKind::App(func, _, args) => {
+                func.mentions_outer(depth) || args.iter().any(|e| e.mentions_outer(depth))
+            }
+            ExprKind::IfThenElse(p, e1, e2) => {
+                p.mentions_outer(depth) || e1.mentions_outer(depth) || e2.mentions_outer(depth)
+            }
+            ExprKind::Exists(e) | ExprKind::ForAll(e) => {
+                e.skip_binder_ref().mentions_outer(depth + 1)
+            }
+            ExprKind::BoundedQuant(_, _, body) => body.skip_binder_ref().mentions_outer(depth + 1),
+            ExprKind::Let(init, inner) => {
+                init.mentions_outer(depth) || inner.skip_binder_ref().mentions_outer(depth + 1)
+            }
+            ExprKind::Abs(lambda) => lambda.body.skip_binder_ref().mentions_outer(depth + 1),
+            ExprKind::Constant(_)
+            | ExprKind::ConstDefId(_)
+            | ExprKind::GlobalFunc(_)
+            | ExprKind::InternalFunc(_)
+            | ExprKind::KVar(_)
+            | ExprKind::Alias(..)
+            | ExprKind::Hole(_) => false,
+        }
+    }
+
+    fn collect_conjuncts(&self) -> Vec<&Expr> {
+        match self.kind() {
+            ExprKind::BinaryOp(BinOp::And, lhs, rhs) => {
+                let mut result = lhs.collect_conjuncts();
+                result.extend(rhs.collect_conjuncts());
+                result
+            }
+            _ => vec![self],
+        }
+    }
+
+    pub fn eliminate_dead_variables(&self) -> Expr {
+        match self.kind() {
+            ExprKind::Exists(binder) => {
+                let body = binder.clone().map(|e| e.eliminate_dead_variables());
+                let conjuncts = body.skip_binder_ref().collect_conjuncts();
+                let live_conjuncts: Vec<Expr> = conjuncts
+                    .into_iter()
+                    .filter(|c| c.mentions_outer(0))
+                    .cloned()
+                    .collect();
+                if live_conjuncts.is_empty() {
+                    Expr::tt()
+                } else {
+                    let new_body = Expr::and_from_iter(live_conjuncts);
+                    Expr::exists(Binder::bind_with_vars(new_body, body.vars().clone()))
+                }
+            }
+            ExprKind::BinaryOp(op, e1, e2) => {
+                Expr::binary_op(
+                    op.clone(),
+                    e1.eliminate_dead_variables(),
+                    e2.eliminate_dead_variables(),
+                )
+            }
+            ExprKind::UnaryOp(op, e) => Expr::unary_op(*op, e.eliminate_dead_variables()),
+            ExprKind::IfThenElse(p, e1, e2) => {
+                Expr::ite(
+                    p.eliminate_dead_variables(),
+                    e1.eliminate_dead_variables(),
+                    e2.eliminate_dead_variables(),
+                )
+            }
+            ExprKind::ForAll(binder) => {
+                let body = binder.clone().map(|e| e.eliminate_dead_variables());
+                Expr::forall(body)
+            }
+            ExprKind::FieldProj(e, proj) => Expr::field_proj(e.eliminate_dead_variables(), *proj),
+            ExprKind::PathProj(e, field) => Expr::path_proj(e.eliminate_dead_variables(), *field),
+            ExprKind::IsCtor(def_id, variant_idx, e) => {
+                Expr::is_ctor(*def_id, *variant_idx, e.eliminate_dead_variables())
+            }
+            ExprKind::Tuple(flds) => {
+                Expr::tuple(flds.iter().map(|f| f.eliminate_dead_variables()).collect())
+            }
+            ExprKind::Ctor(ctor, flds) => {
+                Expr::ctor(*ctor, flds.iter().map(|f| f.eliminate_dead_variables()).collect())
+            }
+            ExprKind::App(func, sort_args, args) => {
+                Expr::app(
+                    func.eliminate_dead_variables(),
+                    sort_args.clone(),
+                    args.iter().map(|a| a.eliminate_dead_variables()).collect(),
+                )
+            }
+            ExprKind::Let(init, body) => {
+                let init = init.eliminate_dead_variables();
+                let body = body.clone().map(|e| e.eliminate_dead_variables());
+                Expr::let_(init, body)
+            }
+            ExprKind::Abs(lambda) => {
+                let body = lambda.body.clone().map(|e| e.eliminate_dead_variables());
+                Expr::abs(Lambda::bind_with_vars(
+                    body.skip_binder().clone(),
+                    lambda.vars().clone(),
+                    lambda.output(),
+                ))
+            }
+            ExprKind::Alias(alias, args) => {
+                Expr::alias(
+                    alias.clone(),
+                    args.iter().map(|a| a.eliminate_dead_variables()).collect(),
+                )
+            }
+            ExprKind::BoundedQuant(kind, range, body) => {
+                let body = body.clone().map(|e| e.eliminate_dead_variables());
+                Expr::bounded_quant(*kind, *range, body)
+            }
+            // Leaves
+            ExprKind::Var(_)
+            | ExprKind::Local(_)
+            | ExprKind::Constant(_)
+            | ExprKind::ConstDefId(_)
+            | ExprKind::GlobalFunc(_)
+            | ExprKind::InternalFunc(_)
+            | ExprKind::KVar(_)
+            | ExprKind::Hole(_) => self.clone(),
+        }
+    }
+}
+
 // TO DNF
 impl Expr {
     fn filter_vec_expr(exprs: Vec<Expr>) -> Vec<Expr> {
-        let mut seen = HashSet::new();
+        let mut seen = FxIndexSet::default();
         for expr in exprs {
             if !seen.contains(&expr) {
                 seen.insert(expr);
